@@ -1,0 +1,66 @@
+<pre id="status"></pre>
+<pre id="data"></pre>
+
+<button onClick="provider.put()">put</button>
+
+<script>
+  const statusEl = document.getElementById('status')
+  const dataEl = document.getElementById('data')
+
+  class Provider {
+    constructor({ sseUrl, getUrl, putUrl }) {
+      this.sseUrl = sseUrl
+      this.getUrl = getUrl
+      this.putUrl = putUrl
+      this.eventSource = new EventSource(sseUrl)
+
+      statusEl.textContent = 'init'
+
+      this.eventSource.addEventListener('message', (event) => {
+        console.log('message', event)
+        statusEl.textContent = 'message'
+        dataEl.textContent = JSON.stringify(JSON.parse(event.data), null, 2)
+      })
+
+      this.eventSource.addEventListener('error', () => {
+        console.error('error')
+        statusEl.textContent = 'error'
+      })
+
+      this.eventSource.addEventListener('open', () => {
+        statusEl.textContent = 'open'
+        this.get()
+      })
+    }
+
+    async get() {
+      console.log('getting...')
+      const res = await fetch(this.getUrl)
+      const data = await res.json()
+      console.log('got data', data)
+      dataEl.textContent = JSON.stringify(data, null, 2)
+      statusEl.textContent = 'load'
+    }
+
+    async put() {
+      console.log('putting...')
+      const res = await fetch(this.putUrl, {
+        method: 'post',
+        headers: {
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({ counter: Date.now() })
+      })
+      statusEl.textContent = 'put'
+    }
+  }
+
+  const baseUrl = 'https://localhost:8000'
+
+  const provider = new Provider({
+    sseUrl: `${baseUrl}/sse`,
+    getUrl: `${baseUrl}/get`,
+    putUrl: `${baseUrl}/put`
+  })
+
+</script>
