@@ -1,6 +1,5 @@
 {
   "dependencies": {
-    "@sanalabs/json": "^0.1.9",
-    "uWebSockets.js": "uNetworking/uWebSockets.js#v20.10.0"
+    "@sanalabs/json": "^0.1.9"
   }
 }
