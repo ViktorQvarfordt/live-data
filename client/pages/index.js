@@ -1,86 +1,96 @@
-import { useState, useEffect } from 'react'
-import * as json from '@sanalabs/json'
+import { useState, useEffect } from "react";
+import * as json from "@sanalabs/json";
 
 class Provider {
   constructor({ sseUrl, getUrl, putUrl, onData }) {
-    this.sseUrl = sseUrl
-    this.getUrl = getUrl
-    this.putUrl = putUrl
-    this.onData = onData
-    this.eventSource = new EventSource(sseUrl)
+    console.debug("Provider init");
 
-    this.eventSource.addEventListener('message', (event) => {
-      const data = JSON.parse(event.data)
-      console.log('got data', data)
-      this.onData(data)
-    })
+    this.sseUrl = sseUrl;
+    this.getUrl = getUrl;
+    this.putUrl = putUrl;
+    this.onData = onData;
+    this.eventSource = new EventSource(sseUrl);
 
-    this.eventSource.addEventListener('error', () => {
-      console.error('error')
-    })
+    this.eventSource.addEventListener("message", (event) => {
+      const data = JSON.parse(event.data);
+      console.debug("EventSource message", data);
+      this.onData(data);
+    });
 
-    this.eventSource.addEventListener('open', () => {
-      this.get()
-    })
+    this.eventSource.addEventListener("error", () => {
+      console.debug("EventSource error");
+    });
+
+    // Called when eventSource first opens and when recovering from error.
+    this.eventSource.addEventListener("open", () => {
+      console.debug("EventSource open");
+      this.get();
+    });
   }
 
   async get() {
-    const res = await fetch(this.getUrl)
-    const data = await res.json()
-    this.onData(data)
+    console.log("Provider get");
+    const res = await fetch(this.getUrl);
+    const data = await res.json();
+    this.onData(data);
   }
 
   async put(delta) {
-    console.log('put delta', delta)
+    console.log("Provider put", delta);
     await fetch(this.putUrl, {
-      method: 'post',
+      method: "post",
       headers: {
-        'content-type': 'application/json'
+        "content-type": "application/json",
       },
-      body: JSON.stringify(delta)
-    })
+      body: JSON.stringify(delta),
+    });
   }
 
   destroy() {
-    this.eventSource.close()
+    console.debug("Provider destroy");
+    this.eventSource.close();
   }
 }
 
 const Page = () => {
-  const [state, setState] = useState()
-  const [provider, setProvider] = useState()
-  
-  useEffect(() => {
-    const baseUrl = 'https://localhost:8000'
+  const [state, setState] = useState();
+  const [provider, setProvider] = useState();
 
-    console.log('init provider')
+  useEffect(() => {
+    const baseUrl = "https://localhost:8000";
+
     const newProvider = new Provider({
       sseUrl: `${baseUrl}/sse`,
       getUrl: `${baseUrl}/get`,
       putUrl: `${baseUrl}/put`,
-      onData: setState
-    })
+      onData: setState,
+    });
 
-    setProvider(newProvider)
+    setProvider(newProvider);
 
     return () => {
-    console.log('destroy provider')
-    newProvider.destroy()
-      setProvider(undefined)
-    }
-  }, [])
-  
-  if (!provider || !state) return <>Loading...</>
+      newProvider.destroy();
+      setProvider(undefined);
+    };
+  }, []);
 
-  return <div>
-    Here is the data:
-    <pre>{JSON.stringify(state, null, 2)}</pre>
-    <button onClick={() => {
-      const newState = { ...state, counter: Date.now() }
-      const delta = json.diff(state, newState)
-      return provider.put(delta)
-    }}>put</button>
-  </div>
-}
+  if (!provider || !state) return <>Loading...</>;
 
-export default Page
+  return (
+    <div>
+      Here is the data:
+      <pre>{JSON.stringify(state, null, 2)}</pre>
+      <button
+        onClick={() => {
+          const newState = { ...state, counter: Date.now() };
+          const delta = json.diff(state, newState);
+          return provider.put(delta);
+        }}
+      >
+        put
+      </button>
+    </div>
+  );
+};
+
+export default Page;

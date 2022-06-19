@@ -27,7 +27,7 @@ const broadcast = (data) => {
   });
 };
 
-let state = { foo: 'bar' }
+let state = { foo: "bar" };
 
 server.on("stream", (stream, headers) => {
   console.log("stream", headers[":method"], headers[":path"]);
@@ -60,9 +60,9 @@ server.on("stream", (stream, headers) => {
     stream.setEncoding("utf8");
     stream.on("data", (chunk) => (data += chunk));
     stream.on("end", () => {
-      const delta = JSON.parse(data)
-      json.patch(state, delta)
-      broadcast(state)
+      const delta = JSON.parse(data);
+      json.patch(state, delta);
+      broadcast(state);
     });
   }
 
