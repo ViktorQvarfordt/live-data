@@ -2,3 +2,4 @@ node_modules
 yarn-error.log
 cert.pem
 key.pem
+client/.next

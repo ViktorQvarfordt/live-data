@@ -1,15 +1,25 @@
 # Instructions
 
-Set up https keys (required for http2):
+**Start server:**
 
-```
+```sh
+cd server
+
+# Set up HTTPS keys (required for http2). You need this only once.
 openssl req -x509 -newkey rsa:2048 -nodes -sha256 -subj '/CN=localhost' -keyout key.pem -out cert.pem
-```
 
-Start server:
-
-```
 node server.js
+```
+
+**Start client:**
+
+```sh
+cd client
+
+# Install dependencies. You need this only once.
+yarn install
+
+yarn dev
 ```
 
 ## Notes
