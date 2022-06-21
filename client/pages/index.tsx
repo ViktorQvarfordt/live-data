@@ -1,5 +1,8 @@
 import { useState, useEffect } from "react";
 import _ from 'lodash'
+import { customAlphabet } from 'nanoid'
+
+const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 8)
 
 class RowReplicator {
   eventSource: EventSource
@@ -46,7 +49,7 @@ const baseUrl = "https://localhost:8000";
 
 const Page = () => {
   const [provider, setProvider] = useState<RowReplicator>();
-  const [messages, setMessages] = useState([]);
+  const [entities, setEntities] = useState([]);
 
   useEffect(() => {
     const baseUrl = "https://localhost:8000";
@@ -54,7 +57,7 @@ const Page = () => {
     const newProvider = new RowReplicator(
       `${baseUrl}/subscribe/chan1`,
       `${baseUrl}/load/chan1`,
-      (rows) => setMessages((messages) => deduplicate([...messages, ...rows])),
+      (rows) => setEntities((messages) => deduplicate([...messages, ...rows])),
     );
 
     setProvider(newProvider);
@@ -69,7 +72,19 @@ const Page = () => {
 
   return (
     <div>
-      <pre>{JSON.stringify(messages, null, 2)}</pre>
+      {entities.map(entity => (
+        <div key={entity.entityId}>{entity.data.text} <button onClick={async () => {
+          await fetch(`${baseUrl}/publish/chan1`, {
+            method: "post",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              entityType: "chatMessage",
+              entityId: entity.entityId,
+              data: { text: `Hello, world! ${Math.random()}` },
+            }),
+          });
+        }}>Update</button></div>
+      ))}
 
       <button
         onClick={async () => {
@@ -78,13 +93,13 @@ const Page = () => {
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               entityType: "chatMessage",
-              entityId: "123",
+              entityId: nanoid(),
               data: { text: `Hello, world! ${Math.random()}` },
             }),
           });
         }}
       >
-        pub
+        Send
       </button>
     </div>
   );
