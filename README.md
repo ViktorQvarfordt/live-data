@@ -6,7 +6,8 @@
 cd server
 yarn install
 openssl req -x509 -newkey rsa:2048 -nodes -sha256 -subj '/CN=localhost' -keyout key.pem -out cert.pem # https required for http2
-docker run -it --rm -p 6379:6379 redis:7-alpine
+docker run --rm -p 6379:6379 redis:7-alpine
+docker run --rm -p 5432:5432 -e POSTGRES_PASSWORD=password postgres:14-alpine
 node server.js
 ```
 

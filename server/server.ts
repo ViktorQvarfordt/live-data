@@ -1,6 +1,10 @@
 import http2 from "node:http2";
 import fs from "node:fs";
-import { createClient } from "redis";
+import * as db from "./db";
+import { Replicator } from "./replicator";
+import { Json } from "./types";
+import { RegExCaptureResult, TypedRegEx } from "typed-regex";
+import { z } from "zod";
 
 const options = {
   key: fs.readFileSync("./key.pem"),
@@ -17,186 +21,255 @@ const server = http2.createSecureServer(options);
 
 server.on("error", (err) => console.error(err));
 
-type ChannelName = string;
-
-const activeStreams = new Map<ChannelName, Set<http2.ServerHttp2Stream>>();
-
 type Method = string;
-type Handler = (
-  stream: http2.ServerHttp2Stream,
-  m: RegExpExecArray,
-  data?: string
-) => void;
+
+type Handler<Re extends string> = ({
+  stream,
+  params,
+}: {
+  stream: http2.ServerHttp2Stream;
+  params: RegExCaptureResult<Re>;
+}) => void | Promise<void>;
+
+type HandlerWithData<Re extends string, T extends Json> = ({
+  stream,
+  params,
+  data,
+}: {
+  stream: http2.ServerHttp2Stream;
+  params: RegExCaptureResult<Re>;
+  data: T;
+}) => void | Promise<void>;
+
+type HandlerSpec<Re extends string, T extends Json> = {
+  pathRegExp: Re;
+  method: Method;
+} & (
+  | { withData: false; handler: Handler<Re> }
+  | { withData: true; handler: HandlerWithData<Re, T>; schema: z.Schema<T> }
+);
 
 const mkApp = (server: http2.Http2SecureServer) => {
-  const handlerSpecs: {
-    pathRegExp: RegExp;
-    method: Method;
-    handler: Handler;
-  }[] = [];
+  const handlerSpecs: HandlerSpec<any, any>[] = [];
 
-  const handle = (
+  const handle = <Re extends string>(
     method: Method,
-    pathRegExp: RegExp,
-    handler: Handler
+    pathRegExp: Re,
+    handler: Handler<Re>
   ): void => {
-    handlerSpecs.push({ method: method.toUpperCase(), pathRegExp, handler });
+    handlerSpecs.push({
+      method: method.toUpperCase(),
+      pathRegExp,
+      handler,
+      withData: false,
+    });
   };
 
-  server.on("stream", (stream, headers) => {
-    const path = headers[":path"];
-    const method = headers[":method"]?.toUpperCase();
+  const handleWithData = <Re extends string, T extends Json>(
+    method: Method,
+    pathRegExp: Re,
+    schema: z.Schema<T>,
+    handler: HandlerWithData<Re, T>
+  ): void => {
+    handlerSpecs.push({
+      method: method.toUpperCase(),
+      pathRegExp,
+      handler,
+      withData: true,
+      schema,
+    });
+  };
 
-    console.log("stream", method, path);
+  server.on("stream", async (stream, headers) => {
+    try {
+      const path = headers[":path"];
+      const method = headers[":method"]?.toUpperCase();
 
-    if (!path || !method) return;
+      console.log("stream", method, path);
 
-    let handler: Handler | null = null;
-    let m: RegExpExecArray | null = null;
+      if (!path || !method) return;
 
-    for (const spec of handlerSpecs) {
-      if (spec.method !== method) continue;
-      m = spec.pathRegExp.exec(path);
-      if (m === null) continue;
+      let spec: HandlerSpec<any, any> | undefined = undefined;
+      let params: RegExCaptureResult<any> = {};
 
-      handler = spec.handler;
-      break;
-    }
+      for (const _spec of handlerSpecs) {
+        if (_spec.method !== method) continue;
 
-    if (!m || !handler) {
+        const typedRegEx = TypedRegEx(_spec.pathRegExp)
+        if (typedRegEx.isMatch(path)) {
+          params = typedRegEx.captures(path);
+          spec = _spec;
+          break;
+        }
+      }
+
+      if (!spec) {
+        stream.respond({
+          ...corsHeaders,
+          ":status": 404,
+        });
+        return;
+      }
+
+      if (!spec.withData) {
+        await spec.handler({ stream, params });
+      } else {
+        let rawData: string | undefined = undefined;
+
+        stream.setEncoding("utf8");
+
+        stream.on("data", (chunk) => {
+          if (rawData === undefined) {
+            rawData = "";
+          }
+          rawData += chunk;
+        });
+
+        stream.on("end", async () => {
+          if (!spec?.withData) throw new Error("IllegalStateException");
+
+          let data;
+
+          try {
+            data = spec.schema.parse(JSON.parse(rawData ?? ""));
+          } catch (err) {
+            const msg =
+              "400 Bad Request - The sent data could not be parsed according to the schema.";
+            console.warn(msg, err);
+            stream.respond({
+              ...corsHeaders,
+              ":status": 400,
+            });
+            stream.end(msg);
+            return;
+          }
+
+          if (!data) throw new Error("IllegalStateException");
+
+          try {
+            await spec.handler({ stream, params, data });
+          } catch (err) {
+            const msg = "500 Internal Server Error";
+            console.error(msg, err);
+            stream.respond({
+              ...corsHeaders,
+              ":status": 500,
+            });
+            stream.end(msg);
+            return;
+          }
+        });
+      }
+    } catch (err) {
+      const msg = "500 Internal Server Error";
+      console.error(msg, err);
       stream.respond({
         ...corsHeaders,
-        ":status": 404,
+        ":status": 500,
       });
-
+      stream.end(msg);
       return;
     }
-
-    let data: string | undefined = undefined;
-    stream.setEncoding("utf8");
-    stream.on("data", (chunk) => {
-      if (data === undefined) {
-        data = "";
-      }
-      data += chunk;
-    });
-    stream.on("end", () => {
-      if (handler && m) {
-        handler(stream, m, data);
-      }
-    });
   });
 
-  return { handle };
+  return { handle, handleWithData };
 };
 
 const app = mkApp(server);
 
-app.handle("options", /^.*$/, (stream) => {
+app.handle("options", "^.*$", ({ stream }) => {
   stream.respond({ ...corsHeaders, ":status": 204 });
 });
 
+const InsertResult = z.object({ id: z.string(), timestamp: z.string() });
+
+const RowSpec = z.object({
+  entityType: z.string(),
+  entityId: z.string(),
+  data: z.any(),
+});
+
+const Row = z.intersection(RowSpec, InsertResult)
+
+const channelNameToEntityTypes: Record<string, string[]> = {
+  'chan1': ['chatMessage']
+}
+
 async function main() {
-  const redisClient = createClient();
+  const replicator = new Replicator();
 
-  redisClient.on("error", (err) => console.log("Redis Client Error", err));
+  await replicator.init();
 
-  await redisClient.connect();
+  app.handle(
+    "get",
+    "^/subscribe/(?<channelName>.+)$",
+    async ({ stream, params }) => {
+      await replicator.subscribe(params.channelName, stream);
 
-  await redisClient.set("key", "value");
-
-  console.log(await redisClient.get("key"));
-
-  const redisSubscriber = redisClient.duplicate();
-
-  await redisSubscriber.connect();
-
-  const redisChannels = new Set<string>();
-
-  const subscribe = async (
-    channelName: ChannelName,
-    stream: http2.ServerHttp2Stream
-  ): Promise<void> => {
-    console.log("subscribe", channelName);
-
-    if (!activeStreams.has(channelName)) {
-      activeStreams.set(channelName, new Set());
-    }
-
-    activeStreams.get(channelName)?.add(stream);
-
-    if (!redisChannels.has(channelName)) {
-      console.log("redis subscribe", channelName);
-      redisChannels.add(channelName);
-
-      await redisSubscriber.subscribe(channelName, (message) => {
-        console.log('redis got message', channelName, message)
-        activeStreams.get(channelName)?.forEach((stream) => {
-          stream.write(`data: ${message}\n\n`);
-        });
+      stream.respond({
+        ...corsHeaders,
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
       });
+
+      stream.on("close", () =>
+        replicator.unsubscribe(params.channelName, stream)
+      );
     }
-  };
+  );
 
-  const unsubscribe = async (
-    channelName: ChannelName,
-    stream: http2.ServerHttp2Stream
-  ): Promise<void> => {
-    console.log("unsubscribe", channelName);
+  app.handle(
+    "get",
+    "^/load/(?<channelName>.+)$",
+    async ({ stream, params }) => {
+      const entityTypes = channelNameToEntityTypes[params.channelName]
+      if (!entityTypes) throw new Error("IllegalStateException");
+      
+      // SELECT DISTINCT ON is not very fast by default, it can be optimized:
+      // https://wiki.postgresql.org/wiki/Loose_indexscan
+      // https://www.timescale.com/blog/how-we-made-distinct-queries-up-to-8000x-faster-on-postgresql/
+      const entities = await db.getAll(Row, db.sql`
+        SELECT DISTINCT ON (entity_id) *
+        FROM event_log WHERE
+        entity_type = ANY (${entityTypes})
+        ORDER BY entity_id, id DESC;
+      `)
 
-    const set = activeStreams.get(channelName);
-    if (set) {
-      set.delete(stream);
-
-      if (set.size === 0) {
-        activeStreams.delete(channelName);
-      }
+      stream.respond({ ...corsHeaders, 'content-type': 'application/json' });
+      stream.end(JSON.stringify(entities))
     }
+  );
 
-    if (redisChannels.has(channelName)) {
-      console.log("redis unsubscribe", channelName);
+  app.handleWithData(
+    "post",
+    "^/publish/(?<channelName>.+)$",
+    RowSpec,
+    async ({ stream, params, data }) => {
+      if (data === undefined) throw new Error("invalid state");
 
-      redisChannels.delete(channelName);
-      await redisSubscriber.unsubscribe(channelName);
+      const result = await db.getExactlyOne(
+        InsertResult,
+        db.sql`
+          INSERT INTO event_log (entity_type, entity_id, data) VALUES (
+            ${data.entityType},
+            ${data.entityId},
+            ${data.data}
+          )
+          RETURNING id, timestamp
+        `
+      );
+
+      const augmentedData = { ...data, ...result };
+
+      await replicator.publish(
+        params.channelName,
+        JSON.stringify([augmentedData])
+      );
+
+      stream.respond(corsHeaders);
+      stream.end("ok");
     }
-  };
-
-  const publish = async (
-    channelName: ChannelName,
-    data: string
-  ): Promise<void> => {
-    console.log(
-      `publish on ${channelName} to ${activeStreams.get(channelName)?.size} clients:`,
-      data
-    );
-
-    await redisClient.publish(channelName, data);
-  };
-
-  app.handle("get", /^\/subscribe\/(.+)$/, async (stream, m) => {
-    const channelName = m[1];
-    if (channelName === undefined) throw new Error("invalid state");
-
-    await subscribe(channelName, stream);
-
-    stream.respond({
-      ...corsHeaders,
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-    });
-
-    stream.on("close", () => unsubscribe(channelName, stream));
-  });
-  
-  app.handle("post", /^\/publish\/(.+)$/, (stream, m, data) => {
-    const channelName = m[1];
-    if (channelName === undefined) throw new Error("invalid state");
-    if (data === undefined) throw new Error("invalid state");
-
-    stream.respond(corsHeaders);
-
-    publish(channelName, data);
-  });
+  );
 
   const port = process.env.PORT ? parseInt(process.env.PORT) : 8000;
   server.listen(port);
