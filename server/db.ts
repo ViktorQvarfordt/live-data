@@ -85,12 +85,12 @@ async function init() {
 
   await query(sql`
     CREATE TABLE IF NOT EXISTS event_log (
-      id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+      serial_id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
       timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
       entity_type TEXT NOT NULL,
       entity_id TEXT NOT NULL,
       data JSONB,
-      UNIQUE (id, entity_id)
+      UNIQUE (serial_id, entity_id)
     );
   `);
 }

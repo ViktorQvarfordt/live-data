@@ -40,7 +40,7 @@ class RowReplicator {
   }
 }
 
-const deduplicate = (rows: { id, entityId }[]) => _.chain(rows).groupBy(row => row.entityId).entries().map(([, rows]) => _.maxBy(rows, row => row.id)).value()
+const deduplicate = (rows: { serialId, entityId }[]) => _.chain(rows).groupBy(row => row.entityId).entries().map(([, rows]) => _.maxBy(rows, row => row.serialId)).value()
 
 const baseUrl = "https://localhost:8000";
 
@@ -75,7 +75,6 @@ const Page = () => {
         onClick={async () => {
           await fetch(`${baseUrl}/publish/chan1`, {
             method: "post",
-            mode: 'cors',
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               entityType: "chatMessage",

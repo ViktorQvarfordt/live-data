@@ -95,7 +95,7 @@ const mkApp = (server: http2.Http2SecureServer) => {
       for (const _spec of handlerSpecs) {
         if (_spec.method !== method) continue;
 
-        const typedRegEx = TypedRegEx(_spec.pathRegExp)
+        const typedRegEx = TypedRegEx(_spec.pathRegExp);
         if (typedRegEx.isMatch(path)) {
           params = typedRegEx.captures(path);
           spec = _spec;
@@ -181,7 +181,10 @@ app.handle("options", "^.*$", ({ stream }) => {
   stream.respond({ ...corsHeaders, ":status": 204 });
 });
 
-const InsertResult = z.object({ id: z.string(), timestamp: z.string() });
+const InsertResult = z.object({
+  serialId: z.string(), // pg represents bigint as string since javascript numbers cannot represent all bigints
+  timestamp: z.string(),
+});
 
 const RowSpec = z.object({
   entityType: z.string(),
@@ -189,11 +192,11 @@ const RowSpec = z.object({
   data: z.any(),
 });
 
-const Row = z.intersection(RowSpec, InsertResult)
+const Row = z.intersection(InsertResult, RowSpec);
 
 const channelNameToEntityTypes: Record<string, string[]> = {
-  'chan1': ['chatMessage']
-}
+  chan1: ["chatMessage"],
+};
 
 async function main() {
   const replicator = new Replicator();
@@ -222,21 +225,24 @@ async function main() {
     "get",
     "^/load/(?<channelName>.+)$",
     async ({ stream, params }) => {
-      const entityTypes = channelNameToEntityTypes[params.channelName]
+      const entityTypes = channelNameToEntityTypes[params.channelName];
       if (!entityTypes) throw new Error("IllegalStateException");
-      
+
       // SELECT DISTINCT ON is not very fast by default, it can be optimized:
       // https://wiki.postgresql.org/wiki/Loose_indexscan
       // https://www.timescale.com/blog/how-we-made-distinct-queries-up-to-8000x-faster-on-postgresql/
-      const entities = await db.getAll(Row, db.sql`
+      const entities = await db.getAll(
+        Row,
+        db.sql`
         SELECT DISTINCT ON (entity_id) *
         FROM event_log WHERE
         entity_type = ANY (${entityTypes})
-        ORDER BY entity_id, id DESC;
-      `)
+        ORDER BY entity_id, serial_id DESC;
+      `
+      );
 
-      stream.respond({ ...corsHeaders, 'content-type': 'application/json' });
-      stream.end(JSON.stringify(entities))
+      stream.respond({ ...corsHeaders, "content-type": "application/json" });
+      stream.end(JSON.stringify(entities));
     }
   );
 
@@ -255,11 +261,11 @@ async function main() {
             ${data.entityId},
             ${data.data}
           )
-          RETURNING id, timestamp
+          RETURNING serial_id, timestamp
         `
       );
 
-      const augmentedData = { ...data, ...result };
+      const augmentedData = { ...result, ...data };
 
       await replicator.publish(
         params.channelName,

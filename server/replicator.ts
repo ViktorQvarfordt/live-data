@@ -1,7 +1,5 @@
 import http2 from "node:http2";
-import fs from "node:fs";
 import { createClient } from "redis";
-import * as db from "./db";
 
 type ChannelName = string;
 
@@ -48,7 +46,7 @@ export class Replicator {
       this.redisChannels.add(channelName);
 
       await this.redisSubscriber.subscribe(channelName, (message) => {
-        console.log("redis got message", channelName, message);
+        console.log("redis got message", channelName);
         this.activeStreams.get(channelName)?.forEach((stream) => {
           stream.write(`data: ${message}\n\n`);
         });
@@ -87,12 +85,8 @@ export class Replicator {
       throw new Error("Not initialized, call init() first");
     }
 
-    console.log(
-      `publish on ${channelName} to ${
-        this.activeStreams.get(channelName)?.size
-      } clients:`,
-      data
-    );
+    const count = this.activeStreams.get(channelName)?.size;
+    console.log(`publish on ${channelName} to ${count} clients`);
 
     await this.redisClient.publish(channelName, data);
   }
