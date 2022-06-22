@@ -38,8 +38,8 @@ const RowSpec = z.object({
   entityCollectionId: z.string(),
   entityId: z.string(),
   data: z.object({
-    text: z.string()
-  })
+    text: z.string(),
+  }),
 });
 
 const ChatRow = z.object({
@@ -52,11 +52,16 @@ const ChatRow = z.object({
   text: z.string().optional(),
 });
 
-type T = z.infer<typeof ChatRow>
+type T = z.infer<typeof ChatRow>;
 
-const ChatUpsert = ChatRow.pick({ messageId: true, chatId: true, text: true, isDeleted: true })
+const ChatUpsert = ChatRow.pick({
+  messageId: true,
+  chatId: true,
+  text: true,
+  isDeleted: true,
+});
 
-const ChatDelete = ChatRow.pick({ messageId: true, chatId: true })
+const ChatDelete = ChatRow.pick({ messageId: true, chatId: true });
 
 const channelNameToEntityTypes: Record<string, string[]> = {
   chan1: ["chatMessage"],
@@ -131,7 +136,7 @@ async function main() {
         "Cache-Control": "no-cache",
       });
 
-      const handler = () => replicator.unsubscribe(params.channelName, stream)
+      const handler = () => replicator.unsubscribe(params.channelName, stream);
 
       stream.on("close", handler);
       stream.on("error", handler);
@@ -182,10 +187,7 @@ async function main() {
 
       const augmentedData = { ...result, ...data };
 
-      await replicator.publish(
-        data.chatId,
-        JSON.stringify([augmentedData])
-      );
+      await replicator.publish(data.chatId, JSON.stringify([augmentedData]));
 
       stream.respond(corsHeaders);
       stream.end("ok");
@@ -198,7 +200,8 @@ async function main() {
     "get",
     "^/presence/(?<channelName>.+?)/get$",
     async ({ stream, params }) => {
-      const obj = await redisClient.HGETALL(`presence/${params.channelName}`);
+      const ch = `presence:${params.channelName}`;
+      const obj = await redisClient.HGETALL(ch);
       const updates: PresenceUpdates = Object.entries(obj).map(
         ([clientId, str]) => ({
           type: "upsert",
@@ -215,8 +218,8 @@ async function main() {
     "get",
     "^/presence/(?<channelName>.+)/sub/(?<clientId>.+)$",
     async ({ stream, params }) => {
-      const ch = `presence/${params.channelName}`;
-      
+      const ch = `presence:${params.channelName}`;
+
       await replicator.subscribe(ch, stream);
 
       stream.respond({
@@ -226,10 +229,13 @@ async function main() {
       });
 
       stream.on("close", async () => {
-        replicator.unsubscribe(ch, stream)
+        replicator.unsubscribe(ch, stream);
         redisClient.HDEL(ch, params.clientId);
-        const update: PresenceDelete = { type: 'delete', clientId: params.clientId }
-        replicator.publish(ch, JSON.stringify([update]))
+        const update: PresenceDelete = {
+          type: "delete",
+          clientId: params.clientId,
+        };
+        replicator.publish(ch, JSON.stringify([update]));
       });
     }
   );
@@ -239,7 +245,7 @@ async function main() {
     "^/presence/(?<channelName>.+)/pub$",
     PresenceUpsert,
     async ({ stream, params, data }) => {
-      const ch = `presence/${params.channelName}`;
+      const ch = `presence:${params.channelName}`;
 
       await redisClient.HSET(ch, data.clientId, JSON.stringify(data.data));
       await replicator.publish(ch, JSON.stringify([data]));
@@ -249,20 +255,16 @@ async function main() {
     }
   );
 
-  app.handle(
-    "get",
-    "^/stats$",
-    ({ stream }) => {
-      stream.respond({...corsHeaders, 'content-type':'application/type'});
-      
-      const result: Record<string, number> = {}
-      for (const [key, val] of replicator.activeChannels.entries()) {
-        result[key] = val.size
-      }
+  app.handle("get", "^/stats$", ({ stream }) => {
+    stream.respond({ ...corsHeaders, "content-type": "application/type" });
 
-      stream.end(JSON.stringify(result));
+    const result: Record<string, number> = {};
+    for (const [key, val] of replicator.activeChannels.entries()) {
+      result[key] = val.size;
     }
-  );
+
+    stream.end(JSON.stringify(result));
+  });
 
   const port = process.env.PORT ? parseInt(process.env.PORT) : 8000;
   server.listen(port);
