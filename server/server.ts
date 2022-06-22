@@ -47,6 +47,7 @@ const ChatRow = z.object({
   chatId: z.string(),
   chatSequenceId: z.string(),
   messageSequenceId: z.string(),
+  createdAt: z.string(),
   isDeleted: z.boolean().optional(),
   text: z.string().optional(),
 });
@@ -107,9 +108,9 @@ async function main() {
             SELECT DISTINCT ON (message_id) *
             FROM chat_messages WHERE
             chat_id = ${params.chatId}
-            ORDER BY message_id, message_sequence_id DESC, chat_sequence_id ASC
+            ORDER BY message_id, message_sequence_id DESC
           )
-          SELECT * FROM entities where is_deleted IS NOT TRUE
+          SELECT * FROM entities where is_deleted IS NOT TRUE ORDER BY created_at ASC
         `
       );
 
@@ -130,9 +131,15 @@ async function main() {
         "Cache-Control": "no-cache",
       });
 
-      stream.on("close", () =>
-        replicator.unsubscribe(params.channelName, stream)
-      );
+      const handler = () => replicator.unsubscribe(params.channelName, stream)
+
+      stream.on("close", handler);
+      stream.on("error", handler);
+      stream.on("end", handler);
+      stream.on("aborted", handler);
+      stream.on("finish", handler);
+      stream.on("drain", handler);
+      stream.on("unpipe", handler);
     }
   );
 
@@ -144,16 +151,33 @@ async function main() {
       const result = await db.getExactlyOne(
         InsertResult,
         db.sql`
-          INSERT INTO chat_messages (message_id, chat_id, chat_sequence_id, message_sequence_id, text, is_deleted) VALUES (
+          INSERT INTO chat_messages (message_id, chat_id, created_at, chat_sequence_id, message_sequence_id, text, is_deleted) VALUES (
             ${data.messageId},
             ${data.chatId},
-            (select coalesce(max(chat_sequence_id) + 1, 0) from chat_messages where chat_id = ${data.chatId}),
-            (select coalesce(max(message_sequence_id) + 1, 0) from chat_messages where message_id = ${data.messageId}),
+            CURRENT_TIMESTAMP,
+            (SELECT COALESCE(MAX(chat_sequence_id) + 1, 0) FROM chat_messages WHERE chat_id = ${data.chatId}),
+            0,
             ${data.text},
             ${data.isDeleted}
           )
+          ON CONFLICT (message_id) DO UPDATE SET
+            message_sequence_id = chat_messages.message_sequence_id + 1,
+            text = ${data.text},
+            is_deleted = ${data.isDeleted}
           RETURNING chat_sequence_id, message_sequence_id
         `
+        // db.sql`
+        //   INSERT INTO chat_messages (message_id, chat_id, created_at, chat_sequence_id, message_sequence_id, text, is_deleted) VALUES (
+        //     ${data.messageId},
+        //     ${data.chatId},
+        //     COALESCE(created_at, CURRENT_TIMESTAMP),
+        //     (SELECT COALESCE(MAX(chat_sequence_id) + 1, 0) FROM chat_messages WHERE chat_id = ${data.chatId}),
+        //     (SELECT COALESCE(MAX(message_sequence_id) + 1, 0) FROM chat_messages WHERE message_id = ${data.messageId}),
+        //     ${data.text},
+        //     ${data.isDeleted}
+        //   )
+        //   RETURNING chat_sequence_id, message_sequence_id
+        // `
       );
 
       const augmentedData = { ...result, ...data };
@@ -222,6 +246,21 @@ async function main() {
 
       stream.respond(corsHeaders);
       stream.end("ok");
+    }
+  );
+
+  app.handle(
+    "get",
+    "^/stats$",
+    ({ stream }) => {
+      stream.respond({...corsHeaders, 'content-type':'application/type'});
+      
+      const result: Record<string, number> = {}
+      for (const [key, val] of replicator.activeChannels.entries()) {
+        result[key] = val.size
+      }
+
+      stream.end(JSON.stringify(result));
     }
   );
 

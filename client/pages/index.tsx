@@ -130,12 +130,12 @@ class PresenceProvider extends TypedEventEmitter<{
   }
 }
 
-const normalize = (rows: { messageSequenceId; messageId, isDeleted }[]) =>
+const normalize = (rows: { messageSequenceId; messageId; isDeleted }[]) =>
   _.chain(rows)
     .groupBy((row) => row.messageId)
     .entries()
     .map(([, rows]) => _.maxBy(rows, (row) => row.messageSequenceId))
-    .filter(row => !row.isDeleted)
+    .filter((row) => !row.isDeleted)
     .value();
 
 const baseUrl = "https://localhost:8000";
@@ -245,9 +245,15 @@ const Message = ({ message }) => {
   const inputRef = useRef<HTMLInputElement>();
 
   useEffect(() => {
-    setText(message.text ?? '');
+    setText(message.text ?? "");
     inputRef.current?.blur();
   }, [message.text]);
+
+  const send = () => {
+    if (!_.isEqual(message.text, text)) {
+      upsertMessage(message.chatId, message.messageId, text);
+    }
+  };
 
   return (
     <div>
@@ -255,22 +261,21 @@ const Message = ({ message }) => {
         ref={inputRef}
         value={text}
         onChange={(e) => setText(e.target.value)}
-        onBlur={() => {
-          upsertMessage(message.chatId, message.messageId, text);
-        }}
+        onBlur={send}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
-            upsertMessage(message.chatId, message.messageId, text);
+            send();
             (e.target as HTMLInputElement)?.blur();
           }
           if (e.key === "Escape") {
             (e.target as HTMLInputElement)?.blur();
           }
-          if (e.key === "Backspace" && text === '') {
+          if (e.key === "Backspace" && text === "") {
             upsertMessage(message.chatId, message.messageId, undefined, true);
           }
         }}
       />
+      {message.messageSequenceId > 0 && "(edited)"}
     </div>
   );
 };
@@ -287,6 +292,7 @@ const ChatView = () => {
       ))}
 
       <textarea
+        placeholder="Aa"
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {

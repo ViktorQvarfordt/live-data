@@ -88,22 +88,22 @@ export async function transaction<T>(
 }
 
 async function init() {
-
   await query(sql`
-    -- DROP TABLE chat_messages;
+    DROP TABLE chat_messages;
     -- DROP TABLE entity_versions;
 
     CREATE TABLE IF NOT EXISTS chat_messages (
-      message_id TEXT NOT NULL,
+      message_id TEXT PRIMARY KEY,
       chat_id TEXT NOT NULL,
       chat_sequence_id BIGINT NOT NULL,
       message_sequence_id BIGINT NOT NULL,
       timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
+      created_at TIMESTAMP WITH TIME ZONE NOT NULL,
       is_deleted BOOLEAN,
       text TEXT,
 
-      UNIQUE (message_id, message_sequence_id),
+      -- UNIQUE (message_id, message_sequence_id),
       UNIQUE (chat_id, chat_sequence_id)
     );
 
