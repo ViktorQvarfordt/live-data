@@ -29,17 +29,33 @@ app.handle("options", "^.*$", ({ stream }) => {
 });
 
 const InsertResult = z.object({
-  serialId: z.string(), // pg represents bigint as string since javascript numbers cannot represent all bigints
-  timestamp: z.string(),
+  chatSequenceId: z.string(), // pg represents bigint as string since javascript numbers cannot represent all bigints
+  messageSequenceId: z.string(),
 });
 
 const RowSpec = z.object({
   entityType: z.string(),
+  entityCollectionId: z.string(),
   entityId: z.string(),
-  data: Json,
+  data: z.object({
+    text: z.string()
+  })
 });
 
-const Row = z.intersection(InsertResult, RowSpec);
+const ChatRow = z.object({
+  messageId: z.string(),
+  chatId: z.string(),
+  chatSequenceId: z.string(),
+  messageSequenceId: z.string(),
+  isDeleted: z.boolean().optional(),
+  text: z.string().optional(),
+});
+
+type T = z.infer<typeof ChatRow>
+
+const ChatUpsert = ChatRow.pick({ messageId: true, chatId: true, text: true, isDeleted: true })
+
+const ChatDelete = ChatRow.pick({ messageId: true, chatId: true })
 
 const channelNameToEntityTypes: Record<string, string[]> = {
   chan1: ["chatMessage"],
@@ -63,13 +79,38 @@ async function main() {
       // https://wiki.postgresql.org/wiki/Loose_indexscan
       // https://www.timescale.com/blog/how-we-made-distinct-queries-up-to-8000x-faster-on-postgresql/
       const entities = await db.getAll(
-        Row,
+        ChatRow,
         db.sql`
-        SELECT DISTINCT ON (entity_id) *
-        FROM event_log WHERE
-        entity_type = ANY (${entityTypes})
-        ORDER BY entity_id, serial_id DESC;
-      `
+          SELECT DISTINCT ON (entity_id) *
+          FROM event_log WHERE
+          entity_type = ANY (${entityTypes})
+          ORDER BY entity_id, serial_id DESC;
+        `
+      );
+
+      stream.respond({ ...corsHeaders, "content-type": "application/json" });
+      stream.end(JSON.stringify(entities));
+    }
+  );
+
+  app.handle(
+    "get",
+    "^/chat/(?<chatId>.+?)/get$",
+    async ({ stream, params }) => {
+      // SELECT DISTINCT ON is not very fast by default, it can be optimized:
+      // https://wiki.postgresql.org/wiki/Loose_indexscan
+      // https://www.timescale.com/blog/how-we-made-distinct-queries-up-to-8000x-faster-on-postgresql/
+      const entities = await db.getAll(
+        ChatRow,
+        db.sql`
+          WITH entities AS (
+            SELECT DISTINCT ON (message_id) *
+            FROM chat_messages WHERE
+            chat_id = ${params.chatId}
+            ORDER BY message_id, message_sequence_id DESC, chat_sequence_id ASC
+          )
+          SELECT * FROM entities where is_deleted IS NOT TRUE
+        `
       );
 
       stream.respond({ ...corsHeaders, "content-type": "application/json" });
@@ -97,25 +138,28 @@ async function main() {
 
   app.handleWithData(
     "post",
-    "^/channel/(?<channelName>.+?)/pub$",
-    RowSpec,
-    async ({ stream, params, data }) => {
+    "^/chat/upsert$",
+    ChatUpsert,
+    async ({ stream, data }) => {
       const result = await db.getExactlyOne(
         InsertResult,
         db.sql`
-          INSERT INTO event_log (entity_type, entity_id, data) VALUES (
-            ${data.entityType},
-            ${data.entityId},
-            ${data.data}
+          INSERT INTO chat_messages (message_id, chat_id, chat_sequence_id, message_sequence_id, text, is_deleted) VALUES (
+            ${data.messageId},
+            ${data.chatId},
+            (select coalesce(max(chat_sequence_id) + 1, 0) from chat_messages where chat_id = ${data.chatId}),
+            (select coalesce(max(message_sequence_id) + 1, 0) from chat_messages where message_id = ${data.messageId}),
+            ${data.text},
+            ${data.isDeleted}
           )
-          RETURNING serial_id, timestamp
+          RETURNING chat_sequence_id, message_sequence_id
         `
       );
 
       const augmentedData = { ...result, ...data };
 
       await replicator.publish(
-        params.channelName,
+        data.chatId,
         JSON.stringify([augmentedData])
       );
 

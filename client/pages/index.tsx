@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { customAlphabet } from "nanoid";
 import _ from "lodash";
 import { TypedEventEmitter } from "../lib";
@@ -130,11 +130,12 @@ class PresenceProvider extends TypedEventEmitter<{
   }
 }
 
-const deduplicate = (rows: { serialId; entityId }[]) =>
+const normalize = (rows: { messageSequenceId; messageId, isDeleted }[]) =>
   _.chain(rows)
-    .groupBy((row) => row.entityId)
+    .groupBy((row) => row.messageId)
     .entries()
-    .map(([, rows]) => _.maxBy(rows, (row) => row.serialId))
+    .map(([, rows]) => _.maxBy(rows, (row) => row.messageSequenceId))
+    .filter(row => !row.isDeleted)
     .value();
 
 const baseUrl = "https://localhost:8000";
@@ -157,22 +158,22 @@ const PresenceView = () => {
 
     provider.init();
 
-    const handler = (e: MouseEvent) => {
-      provider.setLocalState({ x: e.clientX, y: e.clientY });
-    };
+    // const handler = (e: MouseEvent) => {
+    //   provider.setLocalState({ x: e.clientX, y: e.clientY });
+    // };
 
-    document.addEventListener("mousemove", handler);
+    // document.addEventListener("mousemove", handler);
 
     return () => {
       provider.destroy();
-      document.removeEventListener("mousemove", handler);
+      // document.removeEventListener("mousemove", handler);
     };
   }, []);
 
   return <pre>{JSON.stringify(presenceMap, null, 2)}</pre>;
 };
 
-const EntityView = () => {
+const useEntities = () => {
   const [entities, setEntities] = useState([]);
 
   useEffect(() => {
@@ -184,18 +185,139 @@ const EntityView = () => {
     );
 
     provider.on("update", (msg) =>
-      setEntities((messages) => deduplicate([...messages, ...JSON.parse(msg)]))
+      setEntities((messages) => normalize([...messages, ...JSON.parse(msg)]))
     );
 
-    provider.on("load", (msg) => setEntities(JSON.parse(msg)));
+    provider.on("load", (msg) => setEntities(normalize(JSON.parse(msg))));
 
     provider.init();
 
     return () => provider.destroy();
   }, []);
 
+  return entities;
+};
+
+const useChatMessages = () => {
+  const [chatMessages, setChatMessages] = useState([]);
+
+  useEffect(() => {
+    const baseUrl = "https://localhost:8000";
+
+    const provider = new SseProvider(
+      `${baseUrl}/chat/${channelName}/get`,
+      `${baseUrl}/channel/${channelName}/sub`
+    );
+
+    provider.on("update", (msg) =>
+      setChatMessages((messages) => {
+        console.log([...messages, ...JSON.parse(msg)]);
+        return normalize([...messages, ...JSON.parse(msg)]);
+      })
+    );
+
+    provider.on("load", (msg) => setChatMessages(normalize(JSON.parse(msg))));
+
+    provider.init();
+
+    return () => provider.destroy();
+  }, []);
+
+  return chatMessages;
+};
+
+const upsertMessage = async (
+  chatId: string,
+  messageId: string,
+  text?: string,
+  isDeleted?: boolean
+) => {
+  await fetch(`${baseUrl}/chat/upsert`, {
+    method: "post",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ chatId, messageId, text, isDeleted }),
+  });
+};
+
+const Message = ({ message }) => {
+  // const [isEditing, setIsEditing] = useState(false);
+  const [text, setText] = useState(message.text ?? "");
+  const inputRef = useRef<HTMLInputElement>();
+
+  useEffect(() => {
+    setText(message.text ?? '');
+    inputRef.current?.blur();
+  }, [message.text]);
+
   return (
     <div>
+      <input
+        ref={inputRef}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => {
+          upsertMessage(message.chatId, message.messageId, text);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            upsertMessage(message.chatId, message.messageId, text);
+            (e.target as HTMLInputElement)?.blur();
+          }
+          if (e.key === "Escape") {
+            (e.target as HTMLInputElement)?.blur();
+          }
+          if (e.key === "Backspace" && text === '') {
+            upsertMessage(message.chatId, message.messageId, undefined, true);
+          }
+        }}
+      />
+    </div>
+  );
+};
+
+const ChatView = () => {
+  const chatMessages = useChatMessages();
+  const [text, setText] = useState("");
+
+  return (
+    <>
+      <h2>Chat messages</h2>
+      {chatMessages.map((message) => (
+        <Message key={message.messageId} message={message} />
+      ))}
+
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            upsertMessage(channelName, nanoid(), text);
+            setText("");
+          }
+        }}
+      />
+
+      <button
+        onClick={() => {
+          upsertMessage(channelName, nanoid(), text);
+          setText("");
+        }}
+      >
+        Send
+      </button>
+    </>
+  );
+};
+
+const View = () => {
+  // const entities = useEntities()
+
+  return (
+    <div>
+      <ChatView />
+
+      {/* <h2>Entities</h2>
       {entities.map((entity) => (
         <div key={entity.entityId}>
           {entity.data.text}
@@ -215,9 +337,9 @@ const EntityView = () => {
             Update
           </button>
         </div>
-      ))}
+      ))} */}
 
-      <button
+      {/* <button
         onClick={async () => {
           await fetch(`${baseUrl}/channel/${channelName}/pub`, {
             method: "post",
@@ -231,7 +353,7 @@ const EntityView = () => {
         }}
       >
         Send
-      </button>
+      </button> */}
     </div>
   );
 };
@@ -240,7 +362,7 @@ export default function Page() {
   return (
     <>
       <PresenceView />
-      <EntityView />
+      <View />
     </>
   );
 }

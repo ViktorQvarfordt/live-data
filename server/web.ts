@@ -118,7 +118,7 @@ export const mkApp = (server: http2.Http2SecureServer) => {
           } catch (err) {
             const msg =
               "400 Bad Request - The sent data could not be parsed according to the schema.";
-            console.warn(msg, err);
+            console.warn(msg, err, rawData);
             stream.respond({
               ...corsHeaders,
               ":status": 400,

@@ -19,7 +19,7 @@ const pool = new pg.Pool({
   password: "password",
 });
 
-function snakeToCamel(
+function normalize(
   snakeObj: Record<string, unknown>
 ): Record<string, unknown> {
   const camelObj: Record<string, unknown> = {};
@@ -34,6 +34,13 @@ function snakeToCamel(
         .join("");
 
     camelObj[camelKey] = snakeObj[snakeKey];
+  }
+
+  for (const key in camelObj) {
+    const val = camelObj[key]
+    if (val === null || val === undefined) {
+      delete camelObj[key]
+    }
   }
 
   return camelObj;
@@ -51,7 +58,7 @@ export async function getExactlyOne<T>(
   stmt: SQLStatement
 ): Promise<T> {
   const { rows } = await query(stmt);
-  if (rows.length === 1) return schema.parse(snakeToCamel(rows[0]));
+  if (rows.length === 1) return schema.parse(normalize(rows[0]));
   throw new Error(`Got ${rows.length} rows, expected exactly one`);
 }
 
@@ -60,7 +67,7 @@ export async function getAll<T>(
   stmt: SQLStatement
 ): Promise<T[]> {
   const { rows } = await query(stmt);
-  return rows.map((row) => schema.parse(snakeToCamel(row)));
+  return rows.map((row) => schema.parse(normalize(row)));
 }
 
 export async function transaction<T>(
@@ -81,16 +88,33 @@ export async function transaction<T>(
 }
 
 async function init() {
-  // await query(sql`drop table event_log`)
 
   await query(sql`
-    CREATE TABLE IF NOT EXISTS event_log (
-      serial_id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    -- DROP TABLE chat_messages;
+    -- DROP TABLE entity_versions;
+
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      message_id TEXT NOT NULL,
+      chat_id TEXT NOT NULL,
+      chat_sequence_id BIGINT NOT NULL,
+      message_sequence_id BIGINT NOT NULL,
+      timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+      is_deleted BOOLEAN,
+      text TEXT,
+
+      UNIQUE (message_id, message_sequence_id),
+      UNIQUE (chat_id, chat_sequence_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS entity_versions (
       timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
       entity_type TEXT NOT NULL,
       entity_id TEXT NOT NULL,
+      entity_version_id BIGINT NOT NULL,
+      entity_sequence_id BIGINT NOT NULL,
       data JSONB,
-      UNIQUE (serial_id, entity_id)
+      UNIQUE (entity_id, entity_version_id)
     );
   `);
 }
