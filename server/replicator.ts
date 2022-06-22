@@ -1,13 +1,11 @@
 import http2 from "node:http2";
-import { createClient } from "redis";
+import { redisClient } from "./redis";
 
 type ChannelName = string;
 
 export class Replicator {
-  activeStreams = new Map<ChannelName, Set<http2.ServerHttp2Stream>>();
-  redisChannels = new Set<ChannelName>();
-  redisClient = createClient();
-  redisSubscriber = this.redisClient.duplicate();
+  activeChannels = new Map<ChannelName, Set<http2.ServerHttp2Stream>>();
+  redisSubscriber = redisClient.duplicate();
   state: "uninitialized" | "initializing" | "initialized" = "uninitialized";
 
   async init() {
@@ -16,11 +14,7 @@ export class Replicator {
     }
     this.state = "initializing";
 
-    this.redisClient.on("error", (err) =>
-      console.log("Redis Client Error", err)
-    );
-    await this.redisClient.connect();
-    this.redisSubscriber = this.redisClient.duplicate();
+    this.redisSubscriber = redisClient.duplicate();
     await this.redisSubscriber.connect();
 
     this.state = "initialized";
@@ -35,23 +29,22 @@ export class Replicator {
     }
     console.log("subscribe", channelName);
 
-    if (!this.activeStreams.has(channelName)) {
-      this.activeStreams.set(channelName, new Set());
-    }
+    if (!this.activeChannels.has(channelName)) {
+      console.log('open channel')
 
-    this.activeStreams.get(channelName)?.add(stream);
-
-    if (!this.redisChannels.has(channelName)) {
-      console.log("redis subscribe", channelName);
-      this.redisChannels.add(channelName);
+      this.activeChannels.set(channelName, new Set());
 
       await this.redisSubscriber.subscribe(channelName, (message) => {
-        console.log("redis got message", channelName);
-        this.activeStreams.get(channelName)?.forEach((stream) => {
+        const count = this.activeChannels.get(channelName)?.size;
+        console.log(`redis receive on ${channelName}, publishing to ${count} clients`);
+
+        this.activeChannels.get(channelName)?.forEach((stream) => {
           stream.write(`data: ${message}\n\n`);
         });
       });
     }
+
+    this.activeChannels.get(channelName)?.add(stream);
   }
 
   async unsubscribe(
@@ -63,20 +56,15 @@ export class Replicator {
     }
     console.log("unsubscribe", channelName);
 
-    const set = this.activeStreams.get(channelName);
+    const set = this.activeChannels.get(channelName);
     if (set) {
       set.delete(stream);
 
       if (set.size === 0) {
-        this.activeStreams.delete(channelName);
+        console.log("release channel", channelName);
+        this.activeChannels.delete(channelName);
+        await this.redisSubscriber.unsubscribe(channelName);
       }
-    }
-
-    if (this.redisChannels.has(channelName)) {
-      console.log("redis unsubscribe", channelName);
-
-      this.redisChannels.delete(channelName);
-      await this.redisSubscriber.unsubscribe(channelName);
     }
   }
 
@@ -85,9 +73,8 @@ export class Replicator {
       throw new Error("Not initialized, call init() first");
     }
 
-    const count = this.activeStreams.get(channelName)?.size;
-    console.log(`publish on ${channelName} to ${count} clients`);
+    console.log(`redis publish on ${channelName}`);
 
-    await this.redisClient.publish(channelName, data);
+    await redisClient.publish(channelName, data);
   }
 }
