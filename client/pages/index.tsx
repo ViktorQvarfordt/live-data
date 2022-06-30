@@ -163,7 +163,7 @@ const normalize = (rows: Message[]): Message[] => {
   const result = _.chain(rows)
     .groupBy((row) => row.messageId)
     .entries()
-    .map(([, rows]) => _.maxBy(rows, (row) => row.messageSequenceId))
+    .map(([, rows]) => _.maxBy(rows, (row) => row.isOptimistic ? -1 : row.messageSequenceId))
     .filter(isDefined)
     .filter((row) => !row.isDeleted)
     .orderBy((row) => row.chatSequenceId, "desc")
@@ -176,6 +176,7 @@ const normalize = (rows: Message[]): Message[] => {
     .max()
     .value();
 
+  // TODO: Deleted messaged are treated as holes
   let hasHole = false;
   for (let i = result.length - 1; i >= 0; i--) {
     if (!hasHole && result[i].chatSequenceId !== seq) {
@@ -308,7 +309,7 @@ const useChatMessages = (): [Message[], (op: Op) => void] => {
               .value() + 1;
           updated.push({
             ...op,
-            messageSequenceId: -1,
+            messageSequenceId: 0,
             chatSequenceId,
             createdAt: new Date().toISOString(),
             isOptimistic: true,

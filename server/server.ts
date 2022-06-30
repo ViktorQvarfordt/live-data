@@ -7,6 +7,33 @@ import { z } from "zod";
 import { mkApp } from "./web";
 import { initRedis, redisClient } from "./redis";
 
+const state = { isShutdown: false }
+
+async function shutdown(): Promise<void> {
+  if (state.isShutdown) {
+    console.log('Please wait until graceful shutdown is complete')
+    return
+  }
+  state.isShutdown = true
+  try {
+    // TODO: Iterate over all open presence streams and delete the corresponding data from redis
+    process.exit(0)
+  } catch (e) {
+    console.error('Failed to shutdown server gracefully', e)
+    process.exit(1)
+  }
+}
+
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, entering shutdown')
+  void shutdown()
+})
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, entering shutdown')
+  void shutdown()
+})
+
 const options = {
   key: fs.readFileSync("./key.pem"),
   cert: fs.readFileSync("./cert.pem"),
@@ -119,7 +146,7 @@ async function main() {
           SELECT * FROM entities
           WHERE is_deleted IS NOT TRUE
           ORDER BY created_at DESC
-          LIMIT 5
+          LIMIT 10
         `
       );
 
