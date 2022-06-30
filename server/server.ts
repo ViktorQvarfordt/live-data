@@ -29,8 +29,9 @@ app.handle("options", "^.*$", ({ stream }) => {
 });
 
 const InsertResult = z.object({
-  chatSequenceId: z.string(), // pg represents bigint as string since javascript numbers cannot represent all bigints
-  messageSequenceId: z.string(),
+  chatSequenceId: z.number(),
+  messageSequenceId: z.number(),
+  createdAt: z.string(),
 });
 
 const RowSpec = z.object({
@@ -45,8 +46,8 @@ const RowSpec = z.object({
 const ChatRow = z.object({
   messageId: z.string(),
   chatId: z.string(),
-  chatSequenceId: z.string(),
-  messageSequenceId: z.string(),
+  chatSequenceId: z.number(),
+  messageSequenceId: z.number(),
   createdAt: z.string(),
   isDeleted: z.boolean().optional(),
   text: z.string().optional(),
@@ -115,7 +116,10 @@ async function main() {
             chat_id = ${params.chatId}
             ORDER BY message_id, message_sequence_id DESC
           )
-          SELECT * FROM entities where is_deleted IS NOT TRUE ORDER BY created_at ASC
+          SELECT * FROM entities
+          WHERE is_deleted IS NOT TRUE
+          ORDER BY created_at DESC
+          LIMIT 5
         `
       );
 
@@ -169,8 +173,9 @@ async function main() {
             message_sequence_id = chat_messages.message_sequence_id + 1,
             text = ${data.text},
             is_deleted = ${data.isDeleted}
-          RETURNING chat_sequence_id, message_sequence_id
+          RETURNING chat_sequence_id, message_sequence_id, created_at
         `
+
         // db.sql`
         //   INSERT INTO chat_messages (message_id, chat_id, created_at, chat_sequence_id, message_sequence_id, text, is_deleted) VALUES (
         //     ${data.messageId},
@@ -185,7 +190,7 @@ async function main() {
         // `
       );
 
-      const augmentedData = { ...result, ...data };
+      const augmentedData = ChatRow.parse({ ...result, ...data });
 
       await replicator.publish(data.chatId, JSON.stringify([augmentedData]));
 

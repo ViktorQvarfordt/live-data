@@ -19,6 +19,13 @@ yarn install
 yarn dev
 ```
 
+**Inspect databases:**
+
+```sh
+docker run --network=host -it --rm redis:7-alpine redis-cli
+docker run --network=host -it --rm postgres:14-alpine psql "host=localhost user=postgres password=password"
+```
+
 ## Notes
 
 Using an HTTP2 server since [SSE suffers from fundamental limitations on HTTP1](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#sect1).

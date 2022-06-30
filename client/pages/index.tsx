@@ -1,13 +1,13 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, FC, useCallback } from "react";
 import { customAlphabet } from "nanoid";
 import _ from "lodash";
 import { TypedEventEmitter } from "../lib";
 import { Json, PresenceUpdates, PresenceUpsert } from "../types";
+import { z } from "zod";
 
-const nanoid = customAlphabet(
-  "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
-  8
-);
+// https://en.bitcoinwiki.org/wiki/Base58
+const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const nanoid = customAlphabet(alphabet, 12);
 
 type ClientId = string;
 type PresenceMap = Map<ClientId, Json>;
@@ -16,7 +16,7 @@ class SseProvider extends TypedEventEmitter<{
   load: (msg: string) => void;
   update: (msg: string) => void;
 }> {
-  eventSource: EventSource;
+  eventSource: EventSource | undefined = undefined;
   state: "uninitialized" | "initializing" | "initialized" = "uninitialized";
 
   constructor(public getUrl: string, public sseUrl: string) {
@@ -59,7 +59,7 @@ class SseProvider extends TypedEventEmitter<{
   destroy() {
     console.debug("Provider destroy");
     super.off();
-    this.eventSource.close();
+    this.eventSource?.close();
   }
 }
 
@@ -67,7 +67,7 @@ class PresenceProvider extends TypedEventEmitter<{
   update: (presenceMap: PresenceMap) => void;
 }> {
   private states: PresenceMap;
-  private sseProvider: SseProvider;
+  private sseProvider: SseProvider | undefined = undefined;
   public clientId: string = nanoid();
 
   constructor(
@@ -125,18 +125,74 @@ class PresenceProvider extends TypedEventEmitter<{
 
   destroy() {
     console.debug("Presence destroy");
-    this.sseProvider.destroy();
+    this.sseProvider?.destroy();
     super.off();
   }
 }
 
-const normalize = (rows: { messageSequenceId; messageId; isDeleted }[]) =>
-  _.chain(rows)
+type Op = {
+  chatId: string;
+  messageId: string;
+} & ({ text: string } | { isDeleted: true });
+
+const Message = z.object({
+  messageId: z.string(),
+  chatId: z.string(),
+  chatSequenceId: z.number(),
+  messageSequenceId: z.number(),
+  createdAt: z.string(),
+  isDeleted: z.boolean().optional(),
+  text: z.string().optional(),
+  isOptimistic: z.boolean().optional(),
+});
+
+const Messages = z.array(Message);
+
+type Message = z.infer<typeof Message>;
+
+// Exclude undefined from T
+type NonUndefined<T> = T extends undefined ? never : T;
+
+export function isDefined<T>(val: T): val is NonUndefined<T> {
+  return val !== undefined;
+}
+
+const normalize = (rows: Message[]): Message[] => {
+  console.log("normalize", { rows });
+
+  const result = _.chain(rows)
     .groupBy((row) => row.messageId)
     .entries()
     .map(([, rows]) => _.maxBy(rows, (row) => row.messageSequenceId))
+    .filter(isDefined)
     .filter((row) => !row.isDeleted)
+    .orderBy((row) => row.chatSequenceId, "desc")
+    .take(10)
+    .reverse()
     .value();
+
+  let seq = _.chain(result)
+    .map((msg) => msg.chatSequenceId)
+    .max()
+    .value();
+
+  let hasHole = false;
+  for (let i = result.length - 1; i >= 0; i--) {
+    if (!hasHole && result[i].chatSequenceId !== seq) {
+      hasHole = true;
+    } else {
+      seq--;
+    }
+
+    if (hasHole) {
+      result.splice(i, 1);
+    }
+  }
+
+  console.log("normalize", { result });
+
+  return Messages.parse(result);
+};
 
 const baseUrl = "https://localhost:8000";
 
@@ -174,7 +230,7 @@ const PresenceView = () => {
 };
 
 const useEntities = () => {
-  const [entities, setEntities] = useState([]);
+  const [entities, setEntities] = useState<Message[]>([]);
 
   useEffect(() => {
     const baseUrl = "https://localhost:8000";
@@ -198,8 +254,8 @@ const useEntities = () => {
   return entities;
 };
 
-const useChatMessages = () => {
-  const [chatMessages, setChatMessages] = useState([]);
+const useChatMessages = (): [Message[], (op: Op) => void] => {
+  const [chatMessages, setChatMessages] = useState<Message[]>([]);
 
   useEffect(() => {
     const baseUrl = "https://localhost:8000";
@@ -209,12 +265,10 @@ const useChatMessages = () => {
       `${baseUrl}/channel/${channelName}/sub`
     );
 
-    provider.on("update", (msg) =>
-      setChatMessages((messages) => {
-        console.log([...messages, ...JSON.parse(msg)]);
-        return normalize([...messages, ...JSON.parse(msg)]);
-      })
-    );
+    provider.on("update", (str) => {
+      const msgs = Messages.parse(JSON.parse(str));
+      setChatMessages((messages) => normalize([...messages, ...msgs]));
+    });
 
     provider.on("load", (msg) => setChatMessages(normalize(JSON.parse(msg))));
 
@@ -223,35 +277,77 @@ const useChatMessages = () => {
     return () => provider.destroy();
   }, []);
 
-  return chatMessages;
+  const upsertMessage = useCallback(
+    async (
+      op: {
+        chatId: string;
+        messageId: string;
+      } & ({ text: string } | { isDeleted: true })
+    ) => {
+      setChatMessages((curr) => {
+        const updated: Message[] = [];
+        let wasFound = false;
+        for (const msg of curr) {
+          if (msg.messageId !== op.messageId) {
+            updated.push(msg);
+          } else {
+            updated.push({
+              ...msg,
+              ...op,
+              messageSequenceId: msg.messageSequenceId + 1,
+              isOptimistic: true,
+            });
+            wasFound = true
+          }
+        }
+        if (!wasFound) {
+          const chatSequenceId =
+            _.chain(updated)
+              .map((msg) => msg.chatSequenceId)
+              .max()
+              .value() + 1;
+          updated.push({
+            ...op,
+            messageSequenceId: -1,
+            chatSequenceId,
+            createdAt: new Date().toISOString(),
+            isOptimistic: true,
+          });
+        }
+        return normalize(updated);
+      });
+      await fetch(`${baseUrl}/chat/upsert`, {
+        method: "post",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(op),
+      });
+    },
+    []
+  );
+
+  return [chatMessages, upsertMessage];
 };
 
-const upsertMessage = async (
-  chatId: string,
-  messageId: string,
-  text?: string,
-  isDeleted?: boolean
-) => {
-  await fetch(`${baseUrl}/chat/upsert`, {
-    method: "post",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chatId, messageId, text, isDeleted }),
-  });
-};
-
-const Message = ({ message }) => {
-  // const [isEditing, setIsEditing] = useState(false);
+const MessageComp: FC<{
+  message: Message;
+  upsertMessage: (op: Op) => void;
+}> = ({ message, upsertMessage }) => {
   const [text, setText] = useState(message.text ?? "");
-  const inputRef = useRef<HTMLInputElement>();
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (!("text" in message)) return;
     setText(message.text ?? "");
     inputRef.current?.blur();
-  }, [message.text]);
+  }, [message]);
 
   const send = () => {
-    if (!_.isEqual(message.text, text)) {
-      upsertMessage(message.chatId, message.messageId, text);
+    if ("text" in message && !_.isEqual(message.text, text)) {
+      upsertMessage({
+        chatId: message.chatId,
+        messageId: message.messageId,
+        text,
+      });
     }
   };
 
@@ -266,12 +362,46 @@ const Message = ({ message }) => {
           if (e.key === "Enter" && !e.shiftKey) {
             send();
             (e.target as HTMLInputElement)?.blur();
+          } else if (e.key === "Escape") {
+            (e.target as HTMLInputElement)?.blur();
+          } else if (e.key === "Backspace" && text === "") {
+            upsertMessage({
+              chatId: message.chatId,
+              messageId: message.messageId,
+              isDeleted: true,
+            });
           }
+        }}
+      />
+      {message.messageSequenceId > 0 && "(edited)"}
+    </div>
+  );
+};
+
+const MessageComp2: FC<{
+  message: Message;
+  upsertMessage: (op: Op) => void;
+}> = ({ message, upsertMessage }) => {
+  return (
+    <div>
+      <input
+        value={message.text}
+        onChange={(e) =>
+          upsertMessage({
+            chatId: message.chatId,
+            messageId: message.messageId,
+            text: e.target.value,
+          })
+        }
+        onKeyDown={(e) => {
           if (e.key === "Escape") {
             (e.target as HTMLInputElement)?.blur();
-          }
-          if (e.key === "Backspace" && text === "") {
-            upsertMessage(message.chatId, message.messageId, undefined, true);
+          } else if (e.key === "Backspace" && message.text === "") {
+            upsertMessage({
+              chatId: message.chatId,
+              messageId: message.messageId,
+              isDeleted: true,
+            });
           }
         }}
       />
@@ -281,14 +411,19 @@ const Message = ({ message }) => {
 };
 
 const ChatView = () => {
-  const chatMessages = useChatMessages();
+  const [chatMessages, upsertMessage] = useChatMessages();
   const [text, setText] = useState("");
 
   return (
     <>
       <h2>Chat messages</h2>
+      {chatMessages.length > 0 && chatMessages[0].chatSequenceId !== 0 && '...'}
       {chatMessages.map((message) => (
-        <Message key={message.messageId} message={message} />
+        <MessageComp2
+          key={message.messageId}
+          message={message}
+          upsertMessage={upsertMessage}
+        />
       ))}
 
       <textarea
@@ -298,7 +433,7 @@ const ChatView = () => {
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            upsertMessage(channelName, nanoid(), text);
+            upsertMessage({ chatId: channelName, messageId: nanoid(), text });
             setText("");
           }
         }}
@@ -306,7 +441,7 @@ const ChatView = () => {
 
       <button
         onClick={() => {
-          upsertMessage(channelName, nanoid(), text);
+          upsertMessage({ chatId: channelName, messageId: nanoid(), text });
           setText("");
         }}
       >

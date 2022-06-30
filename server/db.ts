@@ -4,15 +4,25 @@ import { z } from "zod";
 
 export const sql = SQL;
 
-// Disable parsing of dates into javascript Date objects, instead return string.
-// Used to avoid erroneous encoding/decoding when just passing data along to client.
+// https://github.com/brianc/node-pg-types
 const TIMESTAMP_TYPEID = 1114;
 const TIMESTAMPTZ_TYPEID = 1184;
-const UUID_TYPEID = 2950;
+// const UUID_TYPEID = 2950;
+const INT8_TYPEID = 20;
+
 const identity = <T>(x: T): T => x;
+
+// Disable parsing of dates into javascript Date objects, instead return string.
+// Used to avoid erroneous encoding/decoding when just passing data along to client.
 pg.types.setTypeParser(TIMESTAMP_TYPEID, identity);
 pg.types.setTypeParser(TIMESTAMPTZ_TYPEID, identity);
-pg.types.setTypeParser(UUID_TYPEID, (str) => str.replace(/-/g, ""));
+pg.types.setTypeParser(INT8_TYPEID, str => {
+  const x = parseInt(str)
+  if (x > Number.MAX_SAFE_INTEGER || x < Number.MIN_SAFE_INTEGER) {
+    throw new Error('Overflow')
+  }
+  return x
+});
 
 const pool = new pg.Pool({
   user: "postgres",
@@ -89,7 +99,7 @@ export async function transaction<T>(
 
 async function init() {
   await query(sql`
-    DROP TABLE chat_messages;
+    -- DROP TABLE chat_messages;
     -- DROP TABLE entity_versions;
 
     CREATE TABLE IF NOT EXISTS chat_messages (
