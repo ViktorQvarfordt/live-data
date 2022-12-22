@@ -1,10 +1,10 @@
-import http2 from "node:http2";
+import { ServerHttp2Stream } from "node:http2";
 import { redisClient } from "./redis";
 
 type ChannelName = string;
 
-export class Replicator {
-  activeChannels = new Map<ChannelName, Set<http2.ServerHttp2Stream>>();
+export class SsePubSub {
+  activeChannels = new Map<ChannelName, Set<ServerHttp2Stream>>();
   redisSubscriber = redisClient.duplicate();
   state: "uninitialized" | "initializing" | "initialized" = "uninitialized";
 
@@ -22,7 +22,7 @@ export class Replicator {
 
   async subscribe(
     channelName: ChannelName,
-    stream: http2.ServerHttp2Stream
+    stream: ServerHttp2Stream
   ): Promise<void> {
     if (this.state !== "initialized") {
       throw new Error("Not initialized, call init() first");
@@ -49,7 +49,7 @@ export class Replicator {
 
   async unsubscribe(
     channelName: ChannelName,
-    stream: http2.ServerHttp2Stream
+    stream: ServerHttp2Stream
   ): Promise<void> {
     if (this.state !== "initialized") {
       throw new Error("Not initialized, call init() first");

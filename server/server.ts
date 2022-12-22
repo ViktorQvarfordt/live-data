@@ -1,7 +1,7 @@
 import http2 from "node:http2";
 import fs from "node:fs";
 import * as db from "./db";
-import { Replicator } from "./replicator";
+import { SsePubSub } from "./sse-pub-sub";
 import { Json, PresenceDelete, PresenceUpdates, PresenceUpsert } from "./types";
 import { z } from "zod";
 import { mkApp } from "./web";
@@ -96,9 +96,8 @@ const channelNameToEntityTypes: Record<string, string[]> = {
 };
 
 async function main() {
-  const replicator = new Replicator();
-
-  await replicator.init();
+  const ssePubSub = new SsePubSub();
+  await ssePubSub.init();
 
   await initRedis();
 
@@ -159,7 +158,7 @@ async function main() {
     "get",
     "^/channel/(?<channelName>.+?)/sub$",
     async ({ stream, params }) => {
-      await replicator.subscribe(params.channelName, stream);
+      await ssePubSub.subscribe(params.channelName, stream);
 
       stream.respond({
         ...corsHeaders,
@@ -167,7 +166,7 @@ async function main() {
         "Cache-Control": "no-cache",
       });
 
-      const handler = () => replicator.unsubscribe(params.channelName, stream);
+      const handler = () => ssePubSub.unsubscribe(params.channelName, stream);
 
       stream.on("close", handler);
       stream.on("error", handler);
@@ -219,7 +218,7 @@ async function main() {
 
       const augmentedData = ChatRow.parse({ ...result, ...data });
 
-      await replicator.publish(data.chatId, JSON.stringify([augmentedData]));
+      await ssePubSub.publish(data.chatId, JSON.stringify([augmentedData]));
 
       stream.respond(corsHeaders);
       stream.end("ok");
@@ -252,7 +251,7 @@ async function main() {
     async ({ stream, params }) => {
       const ch = `presence:${params.channelName}`;
 
-      await replicator.subscribe(ch, stream);
+      await ssePubSub.subscribe(ch, stream);
 
       stream.respond({
         ...corsHeaders,
@@ -261,13 +260,13 @@ async function main() {
       });
 
       stream.on("close", async () => {
-        replicator.unsubscribe(ch, stream);
+        ssePubSub.unsubscribe(ch, stream);
         redisClient.HDEL(ch, params.clientId);
         const update: PresenceDelete = {
           type: "delete",
           clientId: params.clientId,
         };
-        replicator.publish(ch, JSON.stringify([update]));
+        ssePubSub.publish(ch, JSON.stringify([update]));
       });
     }
   );
@@ -280,7 +279,7 @@ async function main() {
       const ch = `presence:${params.channelName}`;
 
       await redisClient.HSET(ch, data.clientId, JSON.stringify(data.data));
-      await replicator.publish(ch, JSON.stringify([data]));
+      await ssePubSub.publish(ch, JSON.stringify([data]));
 
       stream.respond(corsHeaders);
       stream.end("ok");
@@ -291,7 +290,7 @@ async function main() {
     stream.respond({ ...corsHeaders, "content-type": "application/type" });
 
     const result: Record<string, number> = {};
-    for (const [key, val] of replicator.activeChannels.entries()) {
+    for (const [key, val] of ssePubSub.activeChannels.entries()) {
       result[key] = val.size;
     }
 
