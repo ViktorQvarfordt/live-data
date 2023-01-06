@@ -66,3 +66,7 @@ With that, go-to-definition goes to the `.d.ts` file istead of the source. To ge
 ```
 "declarationMap": true,
 ```
+
+### vscode intellisense
+
+Auto-imports give the right import path both within and across packages.

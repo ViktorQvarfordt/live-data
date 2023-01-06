@@ -11,8 +11,6 @@
     "composite": true,
     "incremental": true,
 
-    "rootDir": "./",
-
     "paths": {
       "@workspace/client/*": ["./*"]
     }
