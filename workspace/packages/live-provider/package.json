@@ -1,23 +1,20 @@
 {
-  "name": "@workspace/common",
+  "name": "@workspace/live-provider",
   "type": "module",
   "scripts": {
     "clean": "rm -rf dist && tsc --build --clean",
     "dev": "tsc --watch",
-    "build": "tsc --build",
+    "build": "tsc",
     "check:ts": "tsc --noEmit"
   },
   "exports": {
-    "./id": "./dist/id.js",
-    "./types": "./dist/types.js",
-    "./assert": "./dist/assert.js",
-    "./typed-event-emitter": "./dist/typed-event-emitter.js"
+    ".": "./dist/index.js"
   },
   "files": [
     "dist/**/*"
   ],
   "dependencies": {
-    "nanoid": "^4.0.0",
+    "@workspace/common": "workspace:*",
     "zod": "^3.20.2"
   },
   "devDependencies": {

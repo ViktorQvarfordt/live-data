@@ -6,15 +6,16 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
 
-    "declarationMap": true,    
+    "declarationMap": true,
     "declaration": true,
     "noEmit": false,
     "composite": true,
     "incremental": true,
 
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": "src"
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules"],
+  "references": [{ "path": "../common" }]
 }

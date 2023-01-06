@@ -1,13 +1,16 @@
 {
   "type": "module",
   "scripts": {
+    "clean": "rm -rf .next && tsc --build --clean",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "check:ts": "tsc --noEmit"
   },
   "dependencies": {
     "@workspace/common": "workspace:*",
+    "@workspace/live-provider": "workspace:*",
     "lodash": "^4.17.21",
     "nanoid": "^4.0.0",
     "next": "^13.1.1",

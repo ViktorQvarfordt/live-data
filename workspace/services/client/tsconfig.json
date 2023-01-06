@@ -1,18 +1,5 @@
 {
   "extends": "@tsconfig/next-strictest",
-  "include": [
-    "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx"
-  ],
-  "exclude": [
-    "node_modules"
-  ],
-  "references": [
-    {
-      "path": "../packages/common"
-    }
-  ],
   "compilerOptions": {
     "disableSourceOfProjectReferenceRedirect": true,
 
@@ -24,8 +11,16 @@
     "composite": true,
     "incremental": true,
 
+    "rootDir": "./",
+
     "paths": {
       "@workspace/client/*": ["./*"]
     }
   },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules"],
+  "references": [
+    { "path": "../../packages/common" },
+    { "path": "../../packages/live-provider" }
+  ]
 }

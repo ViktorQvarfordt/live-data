@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+set -euxo pipefail
+
+pnpm install
+pnpm run --parallel clean
+pnpm run --recursive --filter './packages/*' build
+pnpm run --parallel dev
