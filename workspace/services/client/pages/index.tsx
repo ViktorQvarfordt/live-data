@@ -1,13 +1,10 @@
 import { useState, useEffect, useRef, FC, useCallback } from "react";
-import { customAlphabet } from "nanoid";
 import _ from "lodash";
-import { TypedEventEmitter } from "../lib";
-import { Json, PresenceUpdates, PresenceUpsert } from "../types";
+import { Json, PresenceUpdates, PresenceUpsert } from "@workspace/client/types.js";
 import { z } from "zod";
-
-// https://en.bitcoinwiki.org/wiki/Base58
-const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-const nanoid = customAlphabet(alphabet, 12);
+import { mkId } from "@workspace/common/id";
+import { asNonNullable } from "@workspace/common/assert";
+import { TypedEventEmitter } from "@workspace/client/typed-event-emitter.js";
 
 type ClientId = string;
 type PresenceMap = Map<ClientId, Json>;
@@ -68,7 +65,7 @@ class PresenceProvider extends TypedEventEmitter<{
 }> {
   private states: PresenceMap;
   private sseProvider: SseProvider | undefined = undefined;
-  public clientId: string = nanoid();
+  public clientId: string = mkId();
 
   constructor(
     private getUrl: string,
@@ -163,7 +160,9 @@ const normalize = (rows: Message[]): Message[] => {
   const result = _.chain(rows)
     .groupBy((row) => row.messageId)
     .entries()
-    .map(([, rows]) => _.maxBy(rows, (row) => row.isOptimistic ? -1 : row.messageSequenceId))
+    .map(([, rows]) =>
+      _.maxBy(rows, (row) => (row.isOptimistic ? -1 : row.messageSequenceId))
+    )
     .filter(isDefined)
     .filter((row) => !row.isDeleted)
     .orderBy((row) => row.chatSequenceId, "desc")
@@ -179,7 +178,7 @@ const normalize = (rows: Message[]): Message[] => {
   // TODO: Deleted messaged are treated as holes
   let hasHole = false;
   for (let i = result.length - 1; i >= 0; i--) {
-    if (!hasHole && result[i].chatSequenceId !== seq) {
+    if (!hasHole && asNonNullable(result[i]).chatSequenceId !== seq) {
       hasHole = true;
     } else {
       seq--;
@@ -298,7 +297,7 @@ const useChatMessages = (): [Message[], (op: Op) => void] => {
               messageSequenceId: msg.messageSequenceId + 1,
               isOptimistic: true,
             });
-            wasFound = true
+            wasFound = true;
           }
         }
         if (!wasFound) {
@@ -418,7 +417,7 @@ const ChatView = () => {
   return (
     <>
       <h2>Chat messages</h2>
-      {chatMessages.length > 0 && chatMessages[0].chatSequenceId !== 0 && '...'}
+      {chatMessages.length > 0 && asNonNullable(chatMessages[0]).chatSequenceId !== 0 && "..."}
       {chatMessages.map((message) => (
         <MessageComp2
           key={message.messageId}
@@ -434,7 +433,7 @@ const ChatView = () => {
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            upsertMessage({ chatId: channelName, messageId: nanoid(), text });
+            upsertMessage({ chatId: channelName, messageId: mkId(), text });
             setText("");
           }
         }}
@@ -442,7 +441,7 @@ const ChatView = () => {
 
       <button
         onClick={() => {
-          upsertMessage({ chatId: channelName, messageId: nanoid(), text });
+          upsertMessage({ chatId: channelName, messageId: mkId(), text });
           setText("");
         }}
       >
@@ -488,7 +487,7 @@ const View = () => {
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               entityType: "chatMessage",
-              entityId: nanoid(),
+              entityId: mkId(),
               data: { text: `Hello, world! ${Math.random()}` },
             }),
           });

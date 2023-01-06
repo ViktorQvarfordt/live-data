@@ -3,20 +3,20 @@
 **Start server:**
 
 ```sh
-cd server
-yarn install
-openssl req -x509 -newkey rsa:2048 -nodes -sha256 -subj '/CN=localhost' -keyout key.pem -out cert.pem # https required for http2
 docker run --rm -p 6379:6379 redis:7-alpine
 docker run --rm -p 5432:5432 -e POSTGRES_PASSWORD=password postgres:14-alpine
-node server.js
+cd server
+openssl req -x509 -newkey rsa:2048 -nodes -sha256 -subj '/CN=localhost' -keyout key.pem -out cert.pem # https required for http2
+pnpm i
+pnpm dev
 ```
 
 **Start client:**
 
 ```sh
 cd client
-yarn install
-yarn dev
+pnpm i
+pnpm dev
 ```
 
 **Inspect databases:**
@@ -44,4 +44,25 @@ const publisher = createPublisher({ server, onAuthenticate })
 server.listen(8000)
 
 publisher.publish('channel-123', JSON.stringify({ anyJsonData: 'example' }))
+```
+
+## Project structure
+
+### pnpm and workspaces
+
+* `pnpm` is fast and has strong adoption by the community.
+* `pnpm` doesn't hijack the module resolution like `yarn pnp`, meaning that everything _just works_.
+* `yarn pnpm` doesn't support typescript composit project references.
+
+### Typescript
+
+This compiler option
+```
+"disableSourceOfProjectReferenceRedirect": true,
+```
+is important for performance. It makes vscode not index the composite package source files, which speeds up vscode intellisense etc.
+
+With that, go-to-definition goes to the `.d.ts` file istead of the source. To get around this one can generate source files with this compiler option
+```
+"declarationMap": true,
 ```

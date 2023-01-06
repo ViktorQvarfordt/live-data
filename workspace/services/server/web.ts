@@ -64,6 +64,7 @@ export const mkApp = (server: http2.Http2SecureServer) => {
   };
 
   server.on("stream", async (stream, headers) => {
+    console.log("handling");
     try {
       const path = headers[":path"];
       const method = headers[":method"]?.toUpperCase();
@@ -87,12 +88,12 @@ export const mkApp = (server: http2.Http2SecureServer) => {
       }
 
       if (!spec) {
-        console.log('404')
+        console.log("404");
         stream.respond({
           ...corsHeaders,
           ":status": 404,
         });
-        stream.close()
+        stream.close();
         return;
       }
 

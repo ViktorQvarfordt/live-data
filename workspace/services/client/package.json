@@ -1,0 +1,25 @@
+{
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@workspace/common": "workspace:*",
+    "lodash": "^4.17.21",
+    "nanoid": "^4.0.0",
+    "next": "^13.1.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "zod": "^3.20.2"
+  },
+  "devDependencies": {
+    "@tsconfig/next-strictest": "^1.0.0",
+    "@types/lodash": "^4.14.191",
+    "@types/node": "^18.11.18",
+    "@types/react": "^18.0.26",
+    "typescript": "^4.9.4"
+  }
+}

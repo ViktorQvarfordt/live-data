@@ -1,6 +1,6 @@
 import http2 from "node:http2";
 import fs from "node:fs";
-import * as db from "./db";
+import { sql, getAll, getExactlyOne } from "./db";
 import { SsePubSub } from "./sse-pub-sub";
 import { Json, PresenceDelete, PresenceUpdates, PresenceUpsert } from "./types";
 import { z } from "zod";
@@ -111,9 +111,9 @@ async function main() {
       // SELECT DISTINCT ON is not very fast by default, it can be optimized:
       // https://wiki.postgresql.org/wiki/Loose_indexscan
       // https://www.timescale.com/blog/how-we-made-distinct-queries-up-to-8000x-faster-on-postgresql/
-      const entities = await db.getAll(
+      const entities = await getAll(
         ChatRow,
-        db.sql`
+        sql`
           SELECT DISTINCT ON (entity_id) *
           FROM event_log WHERE
           entity_type = ANY (${entityTypes})
@@ -133,9 +133,9 @@ async function main() {
       // SELECT DISTINCT ON is not very fast by default, it can be optimized:
       // https://wiki.postgresql.org/wiki/Loose_indexscan
       // https://www.timescale.com/blog/how-we-made-distinct-queries-up-to-8000x-faster-on-postgresql/
-      const entities = await db.getAll(
+      const entities = await getAll(
         ChatRow,
-        db.sql`
+        sql`
           WITH entities AS (
             SELECT DISTINCT ON (message_id) *
             FROM chat_messages WHERE
@@ -183,9 +183,9 @@ async function main() {
     "^/chat/upsert$",
     ChatUpsert,
     async ({ stream, data }) => {
-      const result = await db.getExactlyOne(
+      const result = await getExactlyOne(
         InsertResult,
-        db.sql`
+        sql`
           INSERT INTO chat_messages (message_id, chat_id, created_at, chat_sequence_id, message_sequence_id, text, is_deleted) VALUES (
             ${data.messageId},
             ${data.chatId},
@@ -202,7 +202,7 @@ async function main() {
           RETURNING chat_sequence_id, message_sequence_id, created_at
         `
 
-        // db.sql`
+        // sql`
         //   INSERT INTO chat_messages (message_id, chat_id, created_at, chat_sequence_id, message_sequence_id, text, is_deleted) VALUES (
         //     ${data.messageId},
         //     ${data.chatId},
@@ -296,7 +296,7 @@ async function main() {
 
     stream.end(JSON.stringify(result));
   });
-
+  
   const port = process.env.PORT ? parseInt(process.env.PORT) : 8000;
   server.listen(port);
   console.log(`Listening on port ${port}`);

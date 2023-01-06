@@ -1,0 +1,31 @@
+{
+  "extends": "@tsconfig/next-strictest",
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules"
+  ],
+  "references": [
+    {
+      "path": "../packages/common"
+    }
+  ],
+  "compilerOptions": {
+    "disableSourceOfProjectReferenceRedirect": true,
+
+    "module": "esnext",
+    "moduleResolution": "nodenext",
+
+    "declaration": true,
+    "noEmit": false,
+    "composite": true,
+    "incremental": true,
+
+    "paths": {
+      "@workspace/client/*": ["./*"]
+    }
+  },
+}

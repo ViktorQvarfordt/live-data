@@ -29,21 +29,24 @@ const pool = new pg.Pool({
   password: "password",
 });
 
+const snakeToCamel = (snake: string): string => {
+  const words = snake.split("_");
+  const camelKey =
+    words[0] +
+    words
+      .slice(1)
+      .map((word) => word.slice(0, 1).toUpperCase() + word.slice(1))
+      .join("");
+
+      return camelKey
+}
+
 function normalize(
   snakeObj: Record<string, unknown>
 ): Record<string, unknown> {
   const camelObj: Record<string, unknown> = {};
-
   for (const snakeKey in snakeObj) {
-    const words = snakeKey.split("_");
-    const camelKey =
-      words[0] +
-      words
-        .slice(1)
-        .map((word) => word.slice(0, 1).toUpperCase() + word.slice(1))
-        .join("");
-
-    camelObj[camelKey] = snakeObj[snakeKey];
+    camelObj[snakeToCamel(snakeKey)] = snakeObj[snakeKey];
   }
 
   for (const key in camelObj) {
