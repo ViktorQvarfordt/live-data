@@ -5,7 +5,7 @@ type ChannelName = string;
 
 export class SsePubSub {
   activeChannels = new Map<ChannelName, Set<ServerHttp2Stream>>();
-  redisSubscriber = redisClient.duplicate();
+  redisSubscriber: ReturnType<typeof redisClient.duplicate> = redisClient.duplicate();
   state: "uninitialized" | "initializing" | "initialized" = "uninitialized";
 
   async init() {

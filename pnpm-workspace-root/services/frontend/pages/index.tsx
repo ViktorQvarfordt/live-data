@@ -45,7 +45,8 @@ const normalize = (rows: Message[]): Message[] => {
   return Messages.parse(result);
 };
 
-const baseUrl = "https://localhost:8000";
+const coreServerHost = "https://localhost.direct:8000";
+const liveServerHost = "https://localhost.direct:8001";
 
 const channelName = "chan1";
 
@@ -54,9 +55,9 @@ const PresenceView = () => {
 
   useEffect(() => {
     const provider = new PresenceProvider(
-      `${baseUrl}/presence/${channelName}/get`,
-      `${baseUrl}/presence/${channelName}/pub`,
-      `${baseUrl}/presence/${channelName}/sub`
+      `${liveServerHost}/presence/${channelName}/get`,
+      `${liveServerHost}/presence/${channelName}/pub`,
+      `${liveServerHost}/presence/${channelName}/sub`
     );
 
     provider.on("update", (map) =>
@@ -84,11 +85,9 @@ const useEntities = () => {
   const [entities, setEntities] = useState<Message[]>([]);
 
   useEffect(() => {
-    const baseUrl = "https://localhost:8000";
-
     const provider = new SseProvider(
-      `${baseUrl}/channel/${channelName}/get`,
-      `${baseUrl}/channel/${channelName}/sub`
+      `${liveServerHost}/channel/${channelName}/get`,
+      `${liveServerHost}/channel/${channelName}/sub`
     );
 
     provider.on("update", (msg) =>
@@ -109,11 +108,9 @@ const useChatMessages = (): [Message[], (op: Op) => void] => {
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
 
   useEffect(() => {
-    const baseUrl = "https://localhost:8000";
-
     const provider = new SseProvider(
-      `${baseUrl}/chat/${channelName}/get`,
-      `${baseUrl}/channel/${channelName}/sub`
+      `${coreServerHost}/chat/${channelName}/get`,
+      `${liveServerHost}/channel/${channelName}/sub`
     );
 
     provider.on("update", (str) => {
@@ -167,7 +164,7 @@ const useChatMessages = (): [Message[], (op: Op) => void] => {
         }
         return normalize(updated);
       });
-      await fetch(`${baseUrl}/chat/upsert`, {
+      await fetch(`${coreServerHost}/chat/upsert`, {
         method: "post",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(op),

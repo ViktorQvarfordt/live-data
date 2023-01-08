@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "allowJs": false,
+    // "skipLibCheck": true,
+    "noImplicitAny": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+    "strictBindCallApply": true,
+    "strictFunctionTypes": true,
+    "strictNullChecks": true,
+    "strictPropertyInitialization": false,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "downlevelIteration": true,
+    "noUncheckedIndexedAccess": true,
+
+    "disableSourceOfProjectReferenceRedirect": true,
+
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+
+    "declarationMap": true,    
+    "declaration": true,
+    "noEmit": true,
+    "composite": true,
+    "incremental": true,
+  },
+  "references": [
+    { "path": "../../packages/typed-http2-handler" }
+  ],
+  "exclude": ["node_modules", "**/*.test.ts"],
+  "include": ["**/*.ts"]
+}

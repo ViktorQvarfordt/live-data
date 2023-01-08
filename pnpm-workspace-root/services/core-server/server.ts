@@ -1,42 +1,41 @@
 import http2 from "node:http2";
 import fs from "node:fs";
 import { sql, getAll, getExactlyOne } from "./db.js";
-import { SsePubSub } from "./sse-pub-sub.js";
-import { PresenceDelete, PresenceUpdates, PresenceUpsert } from "./types.js";
-import { initRedis, redisClient } from "./redis.js";
-import { z } from "zod"
-import { mkApp } from "@workspace/typed-http2-handler"
+import { z } from "zod";
+import { mkApp } from "@workspace/typed-http2-handler";
+import { config } from "./config.js";
+import fetch from "node-fetch";
 
-const state = { isShutdown: false }
+const state = { isShutdown: false };
 
 async function shutdown(): Promise<void> {
   if (state.isShutdown) {
-    console.log('Please wait until graceful shutdown is complete')
-    return
+    console.log("Please wait until graceful shutdown is complete");
+    return;
   }
-  state.isShutdown = true
+  state.isShutdown = true;
   try {
     // TODO: Iterate over all open presence streams and delete the corresponding data from redis
-    process.exit(0)
+    process.exit(0);
   } catch (e) {
-    console.error('Failed to shutdown server gracefully', e)
-    process.exit(1)
+    console.error("Failed to shutdown server gracefully", e);
+    process.exit(1);
   }
 }
 
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, entering shutdown')
-  void shutdown()
-})
+process.on("SIGTERM", () => {
+  console.log("SIGTERM received, entering shutdown");
+  void shutdown();
+});
 
-process.on('SIGINT', () => {
-  console.log('SIGINT received, entering shutdown')
-  void shutdown()
-})
+process.on("SIGINT", () => {
+  console.log("SIGINT received, entering shutdown");
+  void shutdown();
+});
 
 const options = {
-  key: fs.readFileSync("./key.pem"),
-  cert: fs.readFileSync("./cert.pem"),
+  key: fs.readFileSync("./localhost.direct.key"),
+  cert: fs.readFileSync("./localhost.direct.crt"),
 };
 
 export const corsHeaders = {
@@ -61,15 +60,6 @@ const InsertResult = z.object({
   createdAt: z.string(),
 });
 
-const RowSpec = z.object({
-  entityType: z.string(),
-  entityCollectionId: z.string(),
-  entityId: z.string(),
-  data: z.object({
-    text: z.string(),
-  }),
-});
-
 const ChatRow = z.object({
   messageId: z.string(),
   chatId: z.string(),
@@ -80,8 +70,6 @@ const ChatRow = z.object({
   text: z.string().optional(),
 });
 
-type T = z.infer<typeof ChatRow>;
-
 const ChatUpsert = ChatRow.pick({
   messageId: true,
   chatId: true,
@@ -89,217 +77,108 @@ const ChatUpsert = ChatRow.pick({
   isDeleted: true,
 });
 
-const ChatDelete = ChatRow.pick({ messageId: true, chatId: true });
+// app.handle(
+//   "GET",
+//   "^/entity/(?<entityCollectionId>.+?)/get$",
+//   async ({ stream, params }) => {
+//     // SELECT DISTINCT ON is not very fast by default, it can be optimized:
+//     // https://wiki.postgresql.org/wiki/Loose_indexscan
+//     // https://www.timescale.com/blog/how-we-made-distinct-queries-up-to-8000x-faster-on-postgresql/
+//     const entities = await getAll(
+//       ChatRow,
+//       sql`
+//         WITH entities AS (
+//           SELECT DISTINCT ON (entity_id) *
+//           FROM event_log WHERE
+//           entity_collection_id = ${params.entityCollectionId} -- eg chat:123
+//           ORDER BY entity_id, sequence_id DESC;
+//         )
+//         SELECT * FROM entities
+//         WHERE is_deleted IS NOT TRUE
+//         ORDER BY created_at DESC
+//         LIMIT 10
+//       `
+//     );
 
-const channelNameToEntityTypes: Record<string, string[]> = {
-  chan1: ["chatMessage"],
-};
+//     stream.respond({ ...corsHeaders, "content-type": "application/json" });
+//     stream.end(JSON.stringify(entities));
+//   }
+// );
 
-async function main() {
-  const ssePubSub = new SsePubSub();
-  await ssePubSub.init();
-
-  await initRedis();
-
-  app.handle(
-    "GET",
-    "^/channel/(?<channelName>.+?)/get$",
-    async ({ stream, params }) => {
-      const entityTypes = channelNameToEntityTypes[params.channelName];
-      if (!entityTypes) throw new Error("IllegalStateException");
-
-      // SELECT DISTINCT ON is not very fast by default, it can be optimized:
-      // https://wiki.postgresql.org/wiki/Loose_indexscan
-      // https://www.timescale.com/blog/how-we-made-distinct-queries-up-to-8000x-faster-on-postgresql/
-      const entities = await getAll(
-        ChatRow,
-        sql`
-          SELECT DISTINCT ON (entity_id) *
-          FROM event_log WHERE
-          entity_type = ANY (${entityTypes})
-          ORDER BY entity_id, serial_id DESC;
-        `
-      );
-
-      stream.respond({ ...corsHeaders, "content-type": "application/json" });
-      stream.end(JSON.stringify(entities));
-    }
+app.handle("GET", "^/chat/(?<chatId>.+?)/get$", async ({ stream, params }) => {
+  // SELECT DISTINCT ON is not very fast by default, it can be optimized:
+  // https://wiki.postgresql.org/wiki/Loose_indexscan
+  // https://www.timescale.com/blog/how-we-made-distinct-queries-up-to-8000x-faster-on-postgresql/
+  const entities = await getAll(
+    ChatRow,
+    sql`
+      WITH entities AS (
+        SELECT DISTINCT ON (message_id) *
+        FROM chat_messages WHERE
+        chat_id = ${params.chatId}
+        ORDER BY message_id, message_sequence_id DESC
+      )
+      SELECT * FROM entities
+      WHERE is_deleted IS NOT TRUE
+      ORDER BY created_at DESC
+      LIMIT 10
+    `
   );
 
-  app.handle(
-    "GET",
-    "^/chat/(?<chatId>.+?)/get$",
-    async ({ stream, params }) => {
-      // SELECT DISTINCT ON is not very fast by default, it can be optimized:
-      // https://wiki.postgresql.org/wiki/Loose_indexscan
-      // https://www.timescale.com/blog/how-we-made-distinct-queries-up-to-8000x-faster-on-postgresql/
-      const entities = await getAll(
-        ChatRow,
-        sql`
-          WITH entities AS (
-            SELECT DISTINCT ON (message_id) *
-            FROM chat_messages WHERE
-            chat_id = ${params.chatId}
-            ORDER BY message_id, message_sequence_id DESC
-          )
-          SELECT * FROM entities
-          WHERE is_deleted IS NOT TRUE
-          ORDER BY created_at DESC
-          LIMIT 10
-        `
-      );
+  stream.respond({ ...corsHeaders, "content-type": "application/json" });
+  stream.end(JSON.stringify(entities));
+});
 
-      stream.respond({ ...corsHeaders, "content-type": "application/json" });
-      stream.end(JSON.stringify(entities));
-    }
-  );
+app.handleWithData(
+  "POST",
+  "^/chat/upsert$",
+  ChatUpsert,
+  async ({ stream, data }) => {
+    const result = await getExactlyOne(
+      InsertResult,
+      sql`
+        INSERT INTO chat_messages (message_id, chat_id, created_at, chat_sequence_id, message_sequence_id, text, is_deleted) VALUES (
+          ${data.messageId},
+          ${data.chatId},
+          CURRENT_TIMESTAMP,
+          (SELECT COALESCE(MAX(chat_sequence_id) + 1, 0) FROM chat_messages WHERE chat_id = ${data.chatId}),
+          0,
+          ${data.text},
+          ${data.isDeleted}
+        )
+        ON CONFLICT (message_id) DO UPDATE SET
+          message_sequence_id = chat_messages.message_sequence_id + 1,
+          text = ${data.text},
+          is_deleted = ${data.isDeleted}
+        RETURNING chat_sequence_id, message_sequence_id, created_at
+      `
 
-  app.handle(
-    "GET",
-    "^/channel/(?<channelName>.+?)/sub$",
-    async ({ stream, params }) => {
-      await ssePubSub.subscribe(params.channelName, stream);
+      // sql`
+      //   INSERT INTO chat_messages (message_id, chat_id, created_at, chat_sequence_id, message_sequence_id, text, is_deleted) VALUES (
+      //     ${data.messageId},
+      //     ${data.chatId},
+      //     COALESCE(created_at, CURRENT_TIMESTAMP),
+      //     (SELECT COALESCE(MAX(chat_sequence_id) + 1, 0) FROM chat_messages WHERE chat_id = ${data.chatId}),
+      //     (SELECT COALESCE(MAX(message_sequence_id) + 1, 0) FROM chat_messages WHERE message_id = ${data.messageId}),
+      //     ${data.text},
+      //     ${data.isDeleted}
+      //   )
+      //   RETURNING chat_sequence_id, message_sequence_id
+      // `
+    );
 
-      stream.respond({
-        ...corsHeaders,
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-      });
+    const augmentedData = ChatRow.parse({ ...result, ...data });
 
-      const handler = () => ssePubSub.unsubscribe(params.channelName, stream);
+    await fetch(`${config.ssePubSubHost}/channel/${data.chatId}/pub`, {
+      method: "POST",
+      body: JSON.stringify([augmentedData]),
+    });
 
-      stream.on("close", handler);
-      stream.on("error", handler);
-      stream.on("end", handler);
-      stream.on("aborted", handler);
-      stream.on("finish", handler);
-      stream.on("drain", handler);
-      stream.on("unpipe", handler);
-    }
-  );
+    stream.respond(corsHeaders);
+    stream.end("ok");
+  }
+);
 
-  app.handleWithData(
-    "POST",
-    "^/chat/upsert$",
-    ChatUpsert,
-    async ({ stream, data }) => {
-      const result = await getExactlyOne(
-        InsertResult,
-        sql`
-          INSERT INTO chat_messages (message_id, chat_id, created_at, chat_sequence_id, message_sequence_id, text, is_deleted) VALUES (
-            ${data.messageId},
-            ${data.chatId},
-            CURRENT_TIMESTAMP,
-            (SELECT COALESCE(MAX(chat_sequence_id) + 1, 0) FROM chat_messages WHERE chat_id = ${data.chatId}),
-            0,
-            ${data.text},
-            ${data.isDeleted}
-          )
-          ON CONFLICT (message_id) DO UPDATE SET
-            message_sequence_id = chat_messages.message_sequence_id + 1,
-            text = ${data.text},
-            is_deleted = ${data.isDeleted}
-          RETURNING chat_sequence_id, message_sequence_id, created_at
-        `
-
-        // sql`
-        //   INSERT INTO chat_messages (message_id, chat_id, created_at, chat_sequence_id, message_sequence_id, text, is_deleted) VALUES (
-        //     ${data.messageId},
-        //     ${data.chatId},
-        //     COALESCE(created_at, CURRENT_TIMESTAMP),
-        //     (SELECT COALESCE(MAX(chat_sequence_id) + 1, 0) FROM chat_messages WHERE chat_id = ${data.chatId}),
-        //     (SELECT COALESCE(MAX(message_sequence_id) + 1, 0) FROM chat_messages WHERE message_id = ${data.messageId}),
-        //     ${data.text},
-        //     ${data.isDeleted}
-        //   )
-        //   RETURNING chat_sequence_id, message_sequence_id
-        // `
-      );
-
-      const augmentedData = ChatRow.parse({ ...result, ...data });
-
-      await ssePubSub.publish(data.chatId, JSON.stringify([augmentedData]));
-
-      stream.respond(corsHeaders);
-      stream.end("ok");
-    }
-  );
-
-  // PRESENCE
-
-  app.handle(
-    "GET",
-    "^/presence/(?<channelName>.+?)/get$",
-    async ({ stream, params }) => {
-      const ch = `presence:${params.channelName}`;
-      const obj = await redisClient.HGETALL(ch);
-      const updates: PresenceUpdates = Object.entries(obj).map(
-        ([clientId, str]) => ({
-          type: "upsert",
-          clientId,
-          data: JSON.parse(str),
-        })
-      );
-      stream.respond({ ...corsHeaders, "content-type": "application/json" });
-      stream.end(JSON.stringify(updates));
-    }
-  );
-
-  app.handle(
-    "GET",
-    "^/presence/(?<channelName>.+)/sub/(?<clientId>.+)$",
-    async ({ stream, params }) => {
-      const ch = `presence:${params.channelName}`;
-
-      await ssePubSub.subscribe(ch, stream);
-
-      stream.respond({
-        ...corsHeaders,
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-      });
-
-      stream.on("close", async () => {
-        ssePubSub.unsubscribe(ch, stream);
-        redisClient.HDEL(ch, params.clientId);
-        const update: PresenceDelete = {
-          type: "delete",
-          clientId: params.clientId,
-        };
-        ssePubSub.publish(ch, JSON.stringify([update]));
-      });
-    }
-  );
-
-  app.handleWithData(
-    "POST",
-    "^/presence/(?<channelName>.+)/pub$",
-    PresenceUpsert,
-    async ({ stream, params, data }) => {
-      const ch = `presence:${params.channelName}`;
-
-      await redisClient.HSET(ch, data.clientId, JSON.stringify(data.data));
-      await ssePubSub.publish(ch, JSON.stringify([data]));
-
-      stream.respond(corsHeaders);
-      stream.end("ok");
-    }
-  );
-
-  app.handle("GET", "^/stats$", ({ stream }) => {
-    stream.respond({ ...corsHeaders, "content-type": "application/type" });
-
-    const result: Record<string, number> = {};
-    for (const [key, val] of ssePubSub.activeChannels.entries()) {
-      result[key] = val.size;
-    }
-
-    stream.end(JSON.stringify(result));
-  });
-  
-  const port = process.env.PORT ? parseInt(process.env.PORT) : 8000;
-  server.listen(port);
-  console.log(`Listening on port ${port}`);
-}
-
-main();
+const port = process.env.PORT ? parseInt(process.env.PORT) : 8000;
+server.listen(port);
+console.log(`Listening on port ${port}`);
