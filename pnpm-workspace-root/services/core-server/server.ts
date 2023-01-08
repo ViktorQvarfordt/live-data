@@ -1,11 +1,11 @@
 import http2 from "node:http2";
 import fs from "node:fs";
-import { sql, getAll, getExactlyOne } from "./db";
-import { SsePubSub } from "./sse-pub-sub";
-import { Json, PresenceDelete, PresenceUpdates, PresenceUpsert } from "./types";
-import { z } from "zod";
-import { mkApp } from "./web";
-import { initRedis, redisClient } from "./redis";
+import { sql, getAll, getExactlyOne } from "./db.js";
+import { SsePubSub } from "./sse-pub-sub.js";
+import { PresenceDelete, PresenceUpdates, PresenceUpsert } from "./types.js";
+import { initRedis, redisClient } from "./redis.js";
+import { z } from "zod"
+import { mkApp } from "@workspace/typed-http2-handler"
 
 const state = { isShutdown: false }
 
@@ -51,7 +51,7 @@ server.on("error", (err) => console.error(err));
 
 const app = mkApp(server);
 
-app.handle("options", "^.*$", ({ stream }) => {
+app.handle("OPTIONS", "^.*$", ({ stream }) => {
   stream.respond({ ...corsHeaders, ":status": 204 });
 });
 
@@ -102,7 +102,7 @@ async function main() {
   await initRedis();
 
   app.handle(
-    "get",
+    "GET",
     "^/channel/(?<channelName>.+?)/get$",
     async ({ stream, params }) => {
       const entityTypes = channelNameToEntityTypes[params.channelName];
@@ -127,7 +127,7 @@ async function main() {
   );
 
   app.handle(
-    "get",
+    "GET",
     "^/chat/(?<chatId>.+?)/get$",
     async ({ stream, params }) => {
       // SELECT DISTINCT ON is not very fast by default, it can be optimized:
@@ -155,7 +155,7 @@ async function main() {
   );
 
   app.handle(
-    "get",
+    "GET",
     "^/channel/(?<channelName>.+?)/sub$",
     async ({ stream, params }) => {
       await ssePubSub.subscribe(params.channelName, stream);
@@ -179,7 +179,7 @@ async function main() {
   );
 
   app.handleWithData(
-    "post",
+    "POST",
     "^/chat/upsert$",
     ChatUpsert,
     async ({ stream, data }) => {
@@ -228,7 +228,7 @@ async function main() {
   // PRESENCE
 
   app.handle(
-    "get",
+    "GET",
     "^/presence/(?<channelName>.+?)/get$",
     async ({ stream, params }) => {
       const ch = `presence:${params.channelName}`;
@@ -246,7 +246,7 @@ async function main() {
   );
 
   app.handle(
-    "get",
+    "GET",
     "^/presence/(?<channelName>.+)/sub/(?<clientId>.+)$",
     async ({ stream, params }) => {
       const ch = `presence:${params.channelName}`;
@@ -272,7 +272,7 @@ async function main() {
   );
 
   app.handleWithData(
-    "post",
+    "POST",
     "^/presence/(?<channelName>.+)/pub$",
     PresenceUpsert,
     async ({ stream, params, data }) => {
@@ -286,7 +286,7 @@ async function main() {
     }
   );
 
-  app.handle("get", "^/stats$", ({ stream }) => {
+  app.handle("GET", "^/stats$", ({ stream }) => {
     stream.respond({ ...corsHeaders, "content-type": "application/type" });
 
     const result: Record<string, number> = {};

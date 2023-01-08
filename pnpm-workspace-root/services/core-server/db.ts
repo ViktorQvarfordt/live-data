@@ -1,4 +1,4 @@
-import * as pg from "pg";
+import pg from "pg";
 import { SQL, SQLStatement } from "sql-template-strings";
 import { z } from "zod";
 

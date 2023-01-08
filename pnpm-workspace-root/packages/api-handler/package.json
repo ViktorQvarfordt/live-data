@@ -1,0 +1,26 @@
+{
+  "name": "@workspace/typed-http2-handler",
+  "type": "module",
+  "scripts": {
+    "clean": "rm -rf dist && tsc --build --clean",
+    "dev": "tsc --watch",
+    "build": "tsc",
+    "check:ts": "tsc --noEmit"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist/**/*"
+  ],
+  "dependencies": {
+    "@workspace/common": "workspace:*",
+    "typed-regex": "^0.0.8",
+    "zod": "^3.20.2"
+  },
+  "devDependencies": {
+    "@tsconfig/strictest": "^1.0.2",
+    "@types/node": "^18.11.18",
+    "typescript": "^4.9.4"
+  }
+}

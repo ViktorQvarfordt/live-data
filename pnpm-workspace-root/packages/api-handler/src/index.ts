@@ -1,10 +1,15 @@
-import http2 from "node:http2";
-import { Json } from "./types";
+import type http2 from "node:http2";
+import type { Json } from "@workspace/common/types";
 import { RegExCaptureResult, TypedRegEx } from "typed-regex";
-import { z } from "zod";
-import { corsHeaders } from "./server";
+import type { z } from "zod";
 
-type Method = string;
+export const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "*",
+  "Access-Control-Allow-Methods": "*",
+};
+
+type Method = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE' | 'CONNECT' | 'OPTIONS' | 'TRACE' | 'PATCH'
 
 type Handler<Re extends string> = ({
   stream,
@@ -40,8 +45,9 @@ export const mkApp = (server: http2.Http2SecureServer) => {
     pathRegExp: Re,
     handler: Handler<Re>
   ): void => {
+    // @ts-ignore
     handlerSpecs.push({
-      method: method.toUpperCase(),
+      method: method,
       pathRegExp,
       handler,
       withData: false,
@@ -55,7 +61,7 @@ export const mkApp = (server: http2.Http2SecureServer) => {
     handler: HandlerWithData<Re, T>
   ): void => {
     handlerSpecs.push({
-      method: method.toUpperCase(),
+      method: method,
       pathRegExp,
       handler,
       withData: true,
@@ -67,7 +73,7 @@ export const mkApp = (server: http2.Http2SecureServer) => {
     console.log("handling");
     try {
       const path = headers[":path"];
-      const method = headers[":method"]?.toUpperCase();
+      const method = headers[":method"];
 
       console.log("stream", method, path);
 

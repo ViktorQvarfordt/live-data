@@ -1,5 +1,5 @@
 import { ServerHttp2Stream } from "node:http2";
-import { redisClient } from "./redis";
+import { redisClient } from "./redis.js";
 
 type ChannelName = string;
 
