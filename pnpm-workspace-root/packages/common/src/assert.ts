@@ -1,3 +1,8 @@
+export type NotUndefined<T> = T extends undefined ? never : T;
+
+export function isNotUndefined<T>(val: T): val is NotUndefined<T> {
+  return val !== undefined;
+}
 export function isNonNullable<T>(val: T): val is NonNullable<T> {
   return val !== undefined && val !== null;
 }

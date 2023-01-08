@@ -3,14 +3,7 @@ import _ from "lodash";
 import { mkId } from "@workspace/common/id";
 import { PresenceProvider, SseProvider } from "@workspace/live-provider"
 import { Message, Messages, Op } from "@workspace/client/types.js";
-import { asNonNullable } from "@workspace/common/assert";
-
-// Exclude undefined from T
-type NonUndefined<T> = T extends undefined ? never : T;
-
-export function isDefined<T>(val: T): val is NonUndefined<T> {
-  return val !== undefined;
-}
+import { asNonNullable, isNotUndefined } from "@workspace/common/assert";
 
 const normalize = (rows: Message[]): Message[] => {
   console.log("normalize", { rows });
@@ -21,7 +14,7 @@ const normalize = (rows: Message[]): Message[] => {
     .map(([, rows]) =>
       _.maxBy(rows, (row) => (row.isOptimistic ? -1 : row.messageSequenceId))
     )
-    .filter(isDefined)
+    .filter(isNotUndefined)
     .filter((row) => !row.isDeleted)
     .orderBy((row) => row.chatSequenceId, "desc")
     .take(10)
