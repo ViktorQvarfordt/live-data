@@ -19,6 +19,11 @@ pnpm i
 pnpm dev
 ```
 
+Can run with https by starting
+```
+local-ssl-proxy --key localhost.direct.key --cert localhost.direct.crt --source 3001 --target 3000
+```
+
 **Inspect databases:**
 
 ```sh
