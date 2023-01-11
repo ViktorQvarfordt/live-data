@@ -1,0 +1,12 @@
+{
+  "name": "@workspace/root",
+  "scripts": {
+    "services:dev": "pnpm run --parallel --filter './services/*' dev",
+    "packages:dev": "tsc --build --watch",
+    "packages:build": "tsc --build",
+    "packages:check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^4.9.4"
+  }
+}

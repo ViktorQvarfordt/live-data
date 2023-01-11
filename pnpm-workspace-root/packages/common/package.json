@@ -2,10 +2,7 @@
   "name": "@workspace/common",
   "type": "module",
   "scripts": {
-    "clean": "rm -rf dist && tsc --build --clean",
-    "dev": "tsc --watch",
-    "build": "tsc --build",
-    "check:ts": "tsc --noEmit"
+    "clean": "rm -rf dist && tsc --build --clean"
   },
   "exports": {
     "./id": "./dist/id.js",

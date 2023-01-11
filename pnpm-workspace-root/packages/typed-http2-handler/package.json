@@ -2,10 +2,7 @@
   "name": "@workspace/typed-http2-handler",
   "type": "module",
   "scripts": {
-    "clean": "rm -rf dist && tsc --build --clean",
-    "dev": "tsc --watch",
-    "build": "tsc",
-    "check:ts": "tsc --noEmit"
+    "clean": "rm -rf dist && tsc --build --clean"
   },
   "exports": {
     ".": "./dist/index.js"
