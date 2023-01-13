@@ -9,7 +9,7 @@ export const corsHeaders = {
   "Access-Control-Allow-Methods": "*",
 };
 
-type Method = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE' | 'CONNECT' | 'OPTIONS' | 'TRACE' | 'PATCH'
+export type Method = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE' | 'CONNECT' | 'OPTIONS' | 'TRACE' | 'PATCH'
 
 type Handler<Re extends string> = ({
   stream,

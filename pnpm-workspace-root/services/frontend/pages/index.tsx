@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, FC, useCallback } from "react";
+import { useState, useEffect, FC, useCallback } from "react";
 import _ from "lodash";
 import { mkId } from "@workspace/common/id";
 import { PresenceProvider, SseProvider } from "@workspace/live-provider"
@@ -81,28 +81,28 @@ const PresenceView = () => {
   return <pre>{JSON.stringify(presenceMap, null, 2)}</pre>;
 };
 
-const useEntities = () => {
-  const [entities, setEntities] = useState<Message[]>([]);
+// const useEntities = () => {
+//   const [entities, setEntities] = useState<Message[]>([]);
 
-  useEffect(() => {
-    const provider = new SseProvider(
-      `${liveServerHost}/channel/${channelName}/get`,
-      `${liveServerHost}/channel/${channelName}/sub`
-    );
+//   useEffect(() => {
+//     const provider = new SseProvider(
+//       `${liveServerHost}/channel/${channelName}/get`,
+//       `${liveServerHost}/channel/${channelName}/sub`
+//     );
 
-    provider.on("update", (msg) =>
-      setEntities((messages) => normalize([...messages, ...JSON.parse(msg)]))
-    );
+//     provider.on("update", (msg) =>
+//       setEntities((messages) => normalize([...messages, ...JSON.parse(msg)]))
+//     );
 
-    provider.on("load", (msg) => setEntities(normalize(JSON.parse(msg))));
+//     provider.on("load", (msg) => setEntities(normalize(JSON.parse(msg))));
 
-    provider.init();
+//     provider.init();
 
-    return () => provider.destroy();
-  }, []);
+//     return () => provider.destroy();
+//   }, []);
 
-  return entities;
-};
+//   return entities;
+// };
 
 const useChatMessages = (): [Message[], (op: Op) => void] => {
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
@@ -176,55 +176,55 @@ const useChatMessages = (): [Message[], (op: Op) => void] => {
   return [chatMessages, upsertMessage];
 };
 
-const MessageComp: FC<{
-  message: Message;
-  upsertMessage: (op: Op) => void;
-}> = ({ message, upsertMessage }) => {
-  const [text, setText] = useState(message.text ?? "");
-  const inputRef = useRef<HTMLInputElement>(null);
+// const MessageComp: FC<{
+//   message: Message;
+//   upsertMessage: (op: Op) => void;
+// }> = ({ message, upsertMessage }) => {
+//   const [text, setText] = useState(message.text ?? "");
+//   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (!("text" in message)) return;
-    setText(message.text ?? "");
-    inputRef.current?.blur();
-  }, [message]);
+//   useEffect(() => {
+//     if (!("text" in message)) return;
+//     setText(message.text ?? "");
+//     inputRef.current?.blur();
+//   }, [message]);
 
-  const send = () => {
-    if ("text" in message && !_.isEqual(message.text, text)) {
-      upsertMessage({
-        chatId: message.chatId,
-        messageId: message.messageId,
-        text,
-      });
-    }
-  };
+//   const send = () => {
+//     if ("text" in message && !_.isEqual(message.text, text)) {
+//       upsertMessage({
+//         chatId: message.chatId,
+//         messageId: message.messageId,
+//         text,
+//       });
+//     }
+//   };
 
-  return (
-    <div>
-      <input
-        ref={inputRef}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={send}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
-            send();
-            (e.target as HTMLInputElement)?.blur();
-          } else if (e.key === "Escape") {
-            (e.target as HTMLInputElement)?.blur();
-          } else if (e.key === "Backspace" && text === "") {
-            upsertMessage({
-              chatId: message.chatId,
-              messageId: message.messageId,
-              isDeleted: true,
-            });
-          }
-        }}
-      />
-      {message.messageSequenceId > 0 && "(edited)"}
-    </div>
-  );
-};
+//   return (
+//     <div>
+//       <input
+//         ref={inputRef}
+//         value={text}
+//         onChange={(e) => setText(e.target.value)}
+//         onBlur={send}
+//         onKeyDown={(e) => {
+//           if (e.key === "Enter" && !e.shiftKey) {
+//             send();
+//             (e.target as HTMLInputElement)?.blur();
+//           } else if (e.key === "Escape") {
+//             (e.target as HTMLInputElement)?.blur();
+//           } else if (e.key === "Backspace" && text === "") {
+//             upsertMessage({
+//               chatId: message.chatId,
+//               messageId: message.messageId,
+//               isDeleted: true,
+//             });
+//           }
+//         }}
+//       />
+//       {message.messageSequenceId > 0 && "(edited)"}
+//     </div>
+//   );
+// };
 
 const MessageComp2: FC<{
   message: Message;

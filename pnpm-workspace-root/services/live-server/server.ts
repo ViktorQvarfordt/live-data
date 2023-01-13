@@ -1,10 +1,9 @@
-import http2 from "node:http2";
-import fs from "node:fs";
-import { SsePubSub } from "./sse-pub-sub.js";
-import { PresenceDelete, PresenceUpdates, PresenceUpsert } from "./types.js";
-import { initRedis, redisClient } from "./redis.js";
-import { z } from "zod";
+import { PresenceDelete, PresenceUpdates, PresenceUpsert, PubMsgs } from "@workspace/common/types";
 import { mkApp } from "@workspace/typed-http2-handler";
+import fs from "node:fs";
+import http2 from "node:http2";
+import { initRedis, redisClient } from "./redis.js";
+import { SsePubSub } from "./sse-pub-sub.js";
 
 const state = { isShutdown: false };
 
@@ -64,11 +63,11 @@ await initRedis();
 app.handleWithData(
   "POST",
   "^/channel/(?<channelName>.+?)/pub$",
-  z.string(),
+  PubMsgs,
   async ({ stream, params, data }) => {
-    await ssePubSub.publish(params.channelName, data);
+    await ssePubSub.publish(params.channelName, JSON.stringify(data));
     stream.respond(corsHeaders);
-    stream.end("ok");
+    stream.end();
   }
 );
 
@@ -127,7 +126,7 @@ app.handleWithData(
     await ssePubSub.publish(ch, JSON.stringify([data]));
 
     stream.respond(corsHeaders);
-    stream.end("ok");
+    stream.end();
   }
 );
 

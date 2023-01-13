@@ -15,7 +15,7 @@ export const Message = z.object({
   text: z.string().optional(),
   isOptimistic: z.boolean().optional(),
 });
+export type Message = z.infer<typeof Message>;
 
 export const Messages = z.array(Message);
 
-export type Message = z.infer<typeof Message>;

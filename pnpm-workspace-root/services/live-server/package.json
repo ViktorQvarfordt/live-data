@@ -3,10 +3,11 @@
   "scripts": {
     "prod": "ts-node --esm --swc server.ts",
     "dev": "nodemon --ext ts --delay 200ms --exec 'pnpm run prod'",
-    "check:ts": "tsc --noEmit"
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "@workspace/typed-http2-handler": "workspace:*",
+    "@workspace/common": "workspace:*",
     "redis": "^4.5.1",
     "zod": "^3.20.2"
   },

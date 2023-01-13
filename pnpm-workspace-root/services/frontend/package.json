@@ -6,7 +6,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "check:ts": "tsc --noEmit"
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "@workspace/common": "workspace:*",

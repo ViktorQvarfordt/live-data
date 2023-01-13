@@ -3,11 +3,10 @@
   "scripts": {
     "prod": "ts-node --esm --swc server.ts",
     "dev": "nodemon --ext ts --delay 200ms --exec 'pnpm run prod'",
-    "check:ts": "tsc --noEmit"
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "@workspace/typed-http2-handler": "workspace:*",
-    "node-fetch": "^3.3.0",
     "pg": "^8.8.0",
     "redis": "^4.5.1",
     "sql-template-strings": "^2.2.2",

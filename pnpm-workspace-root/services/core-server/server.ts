@@ -2,9 +2,8 @@ import http2 from "node:http2";
 import fs from "node:fs";
 import { sql, getAll, getExactlyOne } from "./db.js";
 import { z } from "zod";
-import { mkApp } from "@workspace/typed-http2-handler";
+import { Method, mkApp } from "@workspace/typed-http2-handler";
 import { config } from "./config.js";
-import fetch from "node-fetch";
 
 const state = { isShutdown: false };
 
@@ -105,6 +104,35 @@ const ChatUpsert = ChatRow.pick({
 //   }
 // );
 
+const makeHttp2Request = (
+  host: string,
+  path: string,
+  method: Method,
+  body: string
+): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const client = http2.connect(host);
+
+    client.on("error", (err) => reject(err));
+
+    const req = client.request({ ":path": path, ":method": method });
+
+    req.write(body);
+
+    // req.on('response', (headers, flags) => {})
+
+    req.setEncoding("utf8");
+    let data = "";
+    req.on("data", (chunk) => {
+      data += chunk;
+    });
+    req.on("end", () => {
+      resolve(data);
+      client.close();
+    });
+    req.end();
+  });
+
 app.handle("GET", "^/chat/(?<chatId>.+?)/get$", async ({ stream, params }) => {
   // SELECT DISTINCT ON is not very fast by default, it can be optimized:
   // https://wiki.postgresql.org/wiki/Loose_indexscan
@@ -169,13 +197,15 @@ app.handleWithData(
 
     const augmentedData = ChatRow.parse({ ...result, ...data });
 
-    await fetch(`${config.ssePubSubHost}/channel/${data.chatId}/pub`, {
-      method: "POST",
-      body: JSON.stringify([augmentedData]),
-    });
+    await makeHttp2Request(
+      config.ssePubSubHost,
+      `/channel/${data.chatId}/pub`,
+      "POST",
+      JSON.stringify([augmentedData])
+    );
 
     stream.respond(corsHeaders);
-    stream.end("ok");
+    stream.end();
   }
 );
 

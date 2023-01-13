@@ -1,4 +1,0 @@
-#!/usr/bin/env sh
-set -euxo pipefail
-
-pnpm run --parallel check:ts 

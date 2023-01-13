@@ -1,7 +1,6 @@
 import { mkId } from "@workspace/common/id";
 import { TypedEventEmitter } from "@workspace/common/typed-event-emitter";
-import { Json } from "@workspace/common/types";
-import { z } from 'zod'
+import { Json, PresenceUpdates, PresenceUpsert } from "@workspace/common/types";
 
 export class SseProvider extends TypedEventEmitter<{
   load: (msg: string) => void;
@@ -53,16 +52,6 @@ export class SseProvider extends TypedEventEmitter<{
     this.eventSource?.close();
   }
 }
-
-export const PresenceUpsert = z.object({ type: z.literal("upsert"), clientId: z.string(), data: Json })
-export const PresenceDelete = z.object({ type: z.literal("delete"), clientId: z.string() })
-export const PresenceUpdate = z.discriminatedUnion("type", [ PresenceUpsert, PresenceDelete ]);
-export const PresenceUpdates = z.array(PresenceUpdate);
-
-export type PresenceUpsert = z.infer<typeof PresenceUpsert>
-export type PresenceDelete = z.infer<typeof PresenceDelete>
-export type PresenceUpdate = z.infer<typeof PresenceUpdate>
-export type PresenceUpdates = z.infer<typeof PresenceUpdates>
 
 type ClientId = string;
 type PresenceMap = Map<ClientId, Json>;
