@@ -34,8 +34,8 @@ process.on("SIGINT", () => {
 });
 
 const options = {
-  key: fs.readFileSync("./localhost.direct.key"),
-  cert: fs.readFileSync("./localhost.direct.crt"),
+  key: fs.readFileSync("../../certs/localhost.direct.key"),
+  cert: fs.readFileSync("../../certs/localhost.direct.crt"),
 };
 
 export const corsHeaders = {
