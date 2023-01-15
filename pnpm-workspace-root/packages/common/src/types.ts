@@ -12,6 +12,9 @@ export const Json: z.ZodType<Json> = z.lazy(() =>
 export const PresenceUpsert = z.object({ type: z.literal("upsert"), clientId: z.string(), data: Json })
 export type PresenceUpsert = z.infer<typeof PresenceUpsert>
 
+export const PresenceHeartbeat = z.object({ type: z.literal("heartbeat"), channelId: z.string(), clientId: z.string() })
+export type PresenceHeartbeat = z.infer<typeof PresenceHeartbeat>
+
 export const PresenceDelete = z.object({ type: z.literal("delete"), clientId: z.string() })
 export type PresenceDelete = z.infer<typeof PresenceDelete>
 

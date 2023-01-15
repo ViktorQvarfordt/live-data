@@ -1,4 +1,10 @@
-import { PresenceDelete, PresenceUpdates, PresenceUpsert, PubMsgs } from "@workspace/common/types";
+import {
+  PresenceDelete,
+  PresenceHeartbeat,
+  PresenceUpdates,
+  PresenceUpsert,
+  PubMsgs,
+} from "@workspace/common/types";
 import { mkApp } from "@workspace/typed-http2-handler";
 import fs from "node:fs";
 import http2 from "node:http2";
@@ -49,8 +55,12 @@ server.on("error", (err) => console.error(err));
 
 const app = mkApp(server);
 
-app.handle("OPTIONS", "^.*$", ({ stream }) => {
-  stream.respond({ ...corsHeaders, ":status": 204 });
+app.handle({
+  method: "OPTIONS",
+  pathRegExp: "^.*$",
+  handler: ({ stream }) => {
+    stream.respond({ ...corsHeaders, ":status": 204 });
+  },
 });
 
 const ssePubSub = new SsePubSub();
@@ -60,21 +70,21 @@ await initRedis();
 
 // Channel
 
-app.handleWithData(
-  "POST",
-  "^/channel/(?<channelName>.+?)/pub$",
-  PubMsgs,
-  async ({ stream, params, data }) => {
-    await ssePubSub.publish(params.channelName, JSON.stringify(data));
+app.handleWithData({
+  method: "POST",
+  pathRegExp: "^/channel/(?<channelName>.+?)/pub$",
+  bodySchema: PubMsgs,
+  handler: async ({ stream, params, bodyData, queryData }) => {
+    await ssePubSub.publish(params.channelName, JSON.stringify(bodyData));
     stream.respond(corsHeaders);
     stream.end();
   }
-);
+});
 
-app.handle(
-  "GET",
-  "^/channel/(?<channelName>.+?)/sub$",
-  async ({ stream, params }) => {
+app.handle({
+  method: "GET",
+  pathRegExp: "^/channel/(?<channelName>.+?)/sub$",
+  handler: async ({ stream, params }) => {
     await ssePubSub.subscribe(params.channelName, stream);
 
     stream.respond({
@@ -93,14 +103,14 @@ app.handle(
     stream.on("drain", handler);
     stream.on("unpipe", handler);
   }
-);
+});
 
 // Presence
 
-app.handle(
-  "GET",
-  "^/presence/(?<channelName>.+?)/get$",
-  async ({ stream, params }) => {
+app.handle({
+  method: "GET",
+  pathRegExp: "^/presence/(?<channelName>.+?)/get$",
+  handler: async ({ stream, params }) => {
     const ch = `presence:${params.channelName}`;
     const obj = await redisClient.HGETALL(ch);
     const updates: PresenceUpdates = Object.entries(obj).map(
@@ -113,27 +123,52 @@ app.handle(
     stream.respond({ ...corsHeaders, "content-type": "application/json" });
     stream.end(JSON.stringify(updates));
   }
-);
+});
 
-app.handleWithData(
-  "POST",
-  "^/presence/(?<channelName>.+)/pub$",
-  PresenceUpsert,
-  async ({ stream, params, data }) => {
+// app.handleWithData(
+//   "POST",
+//   "^/presence/heartbeat$",
+//   PresenceHeartbeat,
+//   async ({ stream, data }) => {
+//     const ch = `presence:${data.channelId}`;
+
+//     await redisClient
+//       .MULTI()
+//       .HSET(ch, data.clientId, JSON.stringify(data.data))
+//       .EXPIRE(ch, 5)
+//       .EXEC();
+
+//     await ssePubSub.publish(ch, JSON.stringify([data]));
+
+//     stream.respond(corsHeaders);
+//     stream.end();
+//   }
+// );
+
+app.handleWithData({
+  method: "POST",
+  pathRegExp: "^/presence/(?<channelName>.+)/pub$",
+  bodySchema: PresenceUpsert,
+  handler: async ({ stream, params, bodyData }) => {
     const ch = `presence:${params.channelName}`;
 
-    await redisClient.HSET(ch, data.clientId, JSON.stringify(data.data));
-    await ssePubSub.publish(ch, JSON.stringify([data]));
+    await redisClient
+      .MULTI()
+      .HSET(ch, bodyData.clientId, JSON.stringify(bodyData.data))
+      .EXPIRE(ch, 5)
+      .EXEC();
+
+    await ssePubSub.publish(ch, JSON.stringify([bodyData]));
 
     stream.respond(corsHeaders);
     stream.end();
   }
-);
+});
 
-app.handle(
-  "GET",
-  "^/presence/(?<channelName>.+)/sub/(?<clientId>.+)$",
-  async ({ stream, params }) => {
+app.handle({
+  method: "GET",
+  pathRegExp: "^/presence/(?<channelName>.+)/sub/(?<clientId>.+)$",
+  handler: async ({ stream, params }) => {
     const ch = `presence:${params.channelName}`;
 
     await ssePubSub.subscribe(ch, stream);
@@ -153,20 +188,24 @@ app.handle(
       };
       ssePubSub.publish(ch, JSON.stringify([update]));
     });
-  }
-);
+  },
+});
 
 // Stats
 
-app.handle("GET", "^/stats$", ({ stream }) => {
-  stream.respond({ ...corsHeaders, "content-type": "application/type" });
+app.handle({
+  method: "GET",
+  pathRegExp: "^/stats$",
+  handler: ({ stream }) => {
+    stream.respond({ ...corsHeaders, "content-type": "application/type" });
 
-  const result: Record<string, number> = {};
-  for (const [key, val] of ssePubSub.activeChannels.entries()) {
-    result[key] = val.size;
-  }
+    const result: Record<string, number> = {};
+    for (const [key, val] of ssePubSub.activeChannels.entries()) {
+      result[key] = val.size;
+    }
 
-  stream.end(JSON.stringify(result));
+    stream.end(JSON.stringify(result));
+  },
 });
 
 const port = process.env.PORT ? parseInt(process.env.PORT) : 8001;

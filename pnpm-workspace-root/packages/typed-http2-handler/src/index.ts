@@ -9,63 +9,123 @@ export const corsHeaders = {
   "Access-Control-Allow-Methods": "*",
 };
 
-export type Method = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE' | 'CONNECT' | 'OPTIONS' | 'TRACE' | 'PATCH'
+export type Method =
+  | "GET"
+  | "HEAD"
+  | "POST"
+  | "PUT"
+  | "DELETE"
+  | "CONNECT"
+  | "OPTIONS"
+  | "TRACE"
+  | "PATCH";
 
-type Handler<Re extends string> = ({
+type Handler<Re extends string, QueryData extends Json | undefined = undefined> = ({
   stream,
   params,
+  queryData,
 }: {
   stream: http2.ServerHttp2Stream;
   params: RegExCaptureResult<Re>;
+  queryData: QueryData;
 }) => void | Promise<void>;
 
-type HandlerWithData<Re extends string, T extends Json> = ({
+// TODO
+// type HandlerWithQueryData<Re extends string, QueryData extends> = ({
+//   stream,
+//   params,
+//   queryData,
+// }: {
+//   stream: http2.ServerHttp2Stream;
+//   params: RegExCaptureResult<Re>;
+//   queryData: QueryData;
+// }) => void | Promise<void>;
+
+type HandlerWithData<
+  Re extends string,
+  BodyData extends Json,
+  QueryData extends Json | undefined = undefined,
+> = ({
   stream,
   params,
-  data,
+  queryData,
+  bodyData,
 }: {
   stream: http2.ServerHttp2Stream;
   params: RegExCaptureResult<Re>;
-  data: T;
+  queryData: QueryData;
+  bodyData: BodyData;
 }) => void | Promise<void>;
 
-type HandlerSpec<Re extends string, T extends Json> = {
+type HandlerSpec<
+  Re extends string,
+  BodyData extends Json,
+  QueryData extends Json | undefined = undefined,
+> = {
   pathRegExp: Re;
   method: Method;
 } & (
-  | { withData: false; handler: Handler<Re> }
-  | { withData: true; handler: HandlerWithData<Re, T>; schema: z.Schema<T> }
+  | {
+      withData: false;
+      handler: Handler<Re, QueryData>;
+      querySchema?: z.Schema<QueryData> | undefined;
+    }
+  | {
+      withData: true;
+      handler: HandlerWithData<Re, BodyData, QueryData>;
+      querySchema?: z.Schema<QueryData> | undefined;
+      bodySchema: z.Schema<BodyData>;
+    }
 );
 
 export const mkApp = (server: http2.Http2SecureServer) => {
-  const handlerSpecs: HandlerSpec<any, any>[] = [];
+  const handlerSpecs: HandlerSpec<any, any, any>[] = []; // TODO Make these types more strict
 
-  const handle = <Re extends string>(
-    method: Method,
-    pathRegExp: Re,
-    handler: Handler<Re>
-  ): void => {
+  const handle = <Re extends string, QueryData extends Json | undefined = undefined>({
+    method,
+    pathRegExp,
+    querySchema,
+    handler,
+  }: {
+    method: Method;
+    pathRegExp: Re;
+    querySchema?: z.Schema<QueryData>;
+    handler: Handler<Re, QueryData>;
+  }): void => {
     // @ts-ignore
     handlerSpecs.push({
       method: method,
       pathRegExp,
-      handler,
+      querySchema,
       withData: false,
+      handler,
     });
   };
 
-  const handleWithData = <Re extends string, T extends Json>(
-    method: Method,
-    pathRegExp: Re,
-    schema: z.Schema<T>,
-    handler: HandlerWithData<Re, T>
-  ): void => {
+  const handleWithData = <
+    Re extends string,
+    BodyData extends Json,
+    QueryData extends Json | undefined = undefined,
+  >({
+    method,
+    pathRegExp,
+    querySchema,
+    bodySchema,
+    handler,
+  }: {
+    method: Method;
+    pathRegExp: Re;
+    querySchema?: z.Schema<QueryData>;
+    bodySchema: z.Schema<BodyData>;
+    handler: HandlerWithData<Re, BodyData, QueryData>;
+  }): void => {
     handlerSpecs.push({
-      method: method,
+      method,
       pathRegExp,
-      handler,
       withData: true,
-      schema,
+      querySchema,
+      bodySchema,
+      handler,
     });
   };
 
@@ -79,7 +139,7 @@ export const mkApp = (server: http2.Http2SecureServer) => {
 
       if (!path || !method) return;
 
-      let spec: HandlerSpec<any, any> | undefined = undefined;
+      let spec: HandlerSpec<any, any, any> | undefined = undefined; // TODO Make these types more strict
       let params: RegExCaptureResult<any> = {};
 
       for (const _spec of handlerSpecs) {
@@ -103,31 +163,36 @@ export const mkApp = (server: http2.Http2SecureServer) => {
         return;
       }
 
+      // let rawQueryData = ''
+      let queryData: Json = {};
+      console.log("PATH", path);
+
       if (!spec.withData) {
-        await spec.handler({ stream, params });
+        // @ts-ignore
+        await spec.handler({ stream, params, queryData });
       } else {
-        let rawData: string | undefined = undefined;
+        let rawBodyData: string | undefined = undefined;
 
         stream.setEncoding("utf8");
 
         stream.on("data", (chunk) => {
-          if (rawData === undefined) {
-            rawData = "";
+          if (rawBodyData === undefined) {
+            rawBodyData = "";
           }
-          rawData += chunk;
+          rawBodyData += chunk;
         });
 
         stream.on("end", async () => {
           if (!spec?.withData) throw new Error("IllegalStateException");
 
-          let data;
+          let bodyData: Json;
 
           try {
-            data = spec.schema.parse(JSON.parse(rawData ?? ""));
+            bodyData = spec.bodySchema.parse(JSON.parse(rawBodyData ?? ""));
           } catch (err) {
             const msg =
               "400 Bad Request - The sent data could not be parsed according to the schema.";
-            console.warn(msg, err, rawData);
+            console.warn(msg, err, rawBodyData);
             stream.respond({
               ...corsHeaders,
               ":status": 400,
@@ -136,10 +201,10 @@ export const mkApp = (server: http2.Http2SecureServer) => {
             return;
           }
 
-          if (!data) throw new Error("IllegalStateException");
+          if (!bodyData) throw new Error("IllegalStateException");
 
           try {
-            await spec.handler({ stream, params, data });
+            await spec.handler({ stream, params, queryData, bodyData });
           } catch (err) {
             const msg = "500 Internal Server Error";
             console.error(msg, err);
