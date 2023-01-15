@@ -59,26 +59,27 @@ type PresenceMap = Map<ClientId, Json>;
 export class PresenceProvider extends TypedEventEmitter<{
   update: (presenceMap: PresenceMap) => void;
 }> {
+  private getUrl: string;
+  private pubUrl: string;
+  private subUrl: string;
+
   private states: PresenceMap;
   private sseProvider: SseProvider | undefined = undefined;
   public clientId: string = mkId();
 
-  constructor(
-    private getUrl: string,
-    private pubUrl: string,
-    private subUrl: string
-  ) {
+  constructor({ host, channelId }: { host: string; channelId: string }) {
     super();
     console.debug("Presence init");
+
+    (this.getUrl = `${host}/presence/${channelId}/get`),
+      (this.pubUrl = `${host}/presence/${channelId}/pub`),
+      (this.subUrl = `${host}/presence/sub?channelId=${channelId}&clientId=${this.clientId}`);
 
     this.states = new Map();
   }
 
   init() {
-    this.sseProvider = new SseProvider(
-      this.getUrl,
-      `${this.subUrl}/${this.clientId}`
-    );
+    this.sseProvider = new SseProvider(this.getUrl, this.subUrl);
     this.sseProvider.on("load", this.onLoad.bind(this));
     this.sseProvider.on("update", this.onUpdate.bind(this));
     this.sseProvider.init();

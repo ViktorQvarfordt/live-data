@@ -165,7 +165,7 @@ app.handle({
   },
 });
 
-app.handleWithData({
+app.handle({
   method: "POST",
   pathRegExp: "^/chat/upsert$",
   bodySchema: ChatUpsert,

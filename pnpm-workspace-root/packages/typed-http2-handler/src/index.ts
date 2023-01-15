@@ -1,5 +1,7 @@
 import type http2 from "node:http2";
-import type { Json } from "@workspace/common/types";
+import qs from "node:querystring";
+import url from "node:url";
+import { Json } from "@workspace/common/types";
 import { RegExCaptureResult, TypedRegEx } from "typed-regex";
 import type { z } from "zod";
 
@@ -20,7 +22,15 @@ export type Method =
   | "TRACE"
   | "PATCH";
 
-type Handler<Re extends string, QueryData extends Json | undefined = undefined> = ({
+type Handler<Re extends string> = ({
+  stream,
+  params,
+}: {
+  stream: http2.ServerHttp2Stream;
+  params: RegExCaptureResult<Re>;
+}) => void | Promise<void>;
+
+type HandlerWithQueryData<Re extends string, QueryData extends Json> = ({
   stream,
   params,
   queryData,
@@ -30,82 +40,68 @@ type Handler<Re extends string, QueryData extends Json | undefined = undefined> 
   queryData: QueryData;
 }) => void | Promise<void>;
 
-// TODO
-// type HandlerWithQueryData<Re extends string, QueryData extends> = ({
-//   stream,
-//   params,
-//   queryData,
-// }: {
-//   stream: http2.ServerHttp2Stream;
-//   params: RegExCaptureResult<Re>;
-//   queryData: QueryData;
-// }) => void | Promise<void>;
-
-type HandlerWithData<
-  Re extends string,
-  BodyData extends Json,
-  QueryData extends Json | undefined = undefined,
-> = ({
+type HandlerWithBodyData<Re extends string, BodyData extends Json> = ({
   stream,
   params,
-  queryData,
   bodyData,
 }: {
   stream: http2.ServerHttp2Stream;
   params: RegExCaptureResult<Re>;
-  queryData: QueryData;
   bodyData: BodyData;
 }) => void | Promise<void>;
 
 type HandlerSpec<
   Re extends string,
   BodyData extends Json,
-  QueryData extends Json | undefined = undefined,
+  QueryData extends Json
 > = {
-  pathRegExp: Re;
   method: Method;
+  pathRegExp: Re;
 } & (
   | {
-      withData: false;
-      handler: Handler<Re, QueryData>;
-      querySchema?: z.Schema<QueryData> | undefined;
+      type: "plain";
+      handler: Handler<Re>;
     }
   | {
-      withData: true;
-      handler: HandlerWithData<Re, BodyData, QueryData>;
-      querySchema?: z.Schema<QueryData> | undefined;
+      type: "with-query";
+      querySchema: z.Schema<QueryData>;
+      handler: HandlerWithQueryData<Re, QueryData>;
+    }
+  | {
+      type: "with-body";
       bodySchema: z.Schema<BodyData>;
+      handler: HandlerWithBodyData<Re, BodyData>;
     }
 );
 
 export const mkApp = (server: http2.Http2SecureServer) => {
-  const handlerSpecs: HandlerSpec<any, any, any>[] = []; // TODO Make these types more strict
+  const handlerSpecs: HandlerSpec<string, Json, Json>[] = [];
 
-  const handle = <Re extends string, QueryData extends Json | undefined = undefined>({
-    method,
-    pathRegExp,
-    querySchema,
-    handler,
-  }: {
+  // with-query
+  function registerHandler<Re extends string, QueryData extends Json>(_: {
     method: Method;
     pathRegExp: Re;
-    querySchema?: z.Schema<QueryData>;
-    handler: Handler<Re, QueryData>;
-  }): void => {
-    // @ts-ignore
-    handlerSpecs.push({
-      method: method,
-      pathRegExp,
-      querySchema,
-      withData: false,
-      handler,
-    });
-  };
-
-  const handleWithData = <
+    querySchema: z.Schema<QueryData>;
+    handler: HandlerWithQueryData<Re, QueryData>;
+  }): void;
+  // with-data
+  function registerHandler<Re extends string, BodyData extends Json>(_: {
+    method: Method;
+    pathRegExp: Re;
+    bodySchema: z.Schema<BodyData>;
+    handler: HandlerWithBodyData<Re, BodyData>;
+  }): void;
+  // plain
+  function registerHandler<Re extends string, QueryData extends Json>(_: {
+    method: Method;
+    pathRegExp: Re;
+    handler: Handler<Re>;
+  }): void;
+  // actual implementation
+  function registerHandler<
     Re extends string,
-    BodyData extends Json,
-    QueryData extends Json | undefined = undefined,
+    QueryData extends Json,
+    BodyData extends Json
   >({
     method,
     pathRegExp,
@@ -116,18 +112,36 @@ export const mkApp = (server: http2.Http2SecureServer) => {
     method: Method;
     pathRegExp: Re;
     querySchema?: z.Schema<QueryData>;
-    bodySchema: z.Schema<BodyData>;
-    handler: HandlerWithData<Re, BodyData, QueryData>;
-  }): void => {
-    handlerSpecs.push({
-      method,
-      pathRegExp,
-      withData: true,
-      querySchema,
-      bodySchema,
-      handler,
-    });
-  };
+    bodySchema?: z.Schema<BodyData>;
+    handler: any;
+  }): void {
+    if (querySchema === undefined && bodySchema === undefined) {
+      handlerSpecs.push({
+        type: "plain",
+        method,
+        pathRegExp,
+        handler,
+      });
+    } else if (querySchema !== undefined && bodySchema === undefined) {
+      handlerSpecs.push({
+        type: "with-query",
+        method,
+        pathRegExp,
+        querySchema,
+        handler,
+      });
+    } else if (querySchema === undefined && bodySchema !== undefined) {
+      handlerSpecs.push({
+        type: "with-body",
+        method,
+        pathRegExp,
+        bodySchema,
+        handler,
+      });
+    } else {
+      throw new Error("IllegalStateException1");
+    }
+  }
 
   server.on("stream", async (stream, headers) => {
     console.log("handling");
@@ -139,22 +153,25 @@ export const mkApp = (server: http2.Http2SecureServer) => {
 
       if (!path || !method) return;
 
-      let spec: HandlerSpec<any, any, any> | undefined = undefined; // TODO Make these types more strict
-      let params: RegExCaptureResult<any> = {};
+      let spec: HandlerSpec<string, Json, Json> | undefined = undefined;
+      let params: RegExCaptureResult<string> = {};
 
       for (const _spec of handlerSpecs) {
         if (_spec.method !== method) continue;
 
         const typedRegEx = TypedRegEx(_spec.pathRegExp);
         if (typedRegEx.isMatch(path)) {
-          params = typedRegEx.captures(path);
+          const _params = typedRegEx.captures(path);
+          if (_params) {
+            params = _params;
+          }
           spec = _spec;
           break;
         }
       }
 
       if (!spec) {
-        console.log("404");
+        console.log("404", path);
         stream.respond({
           ...corsHeaders,
           ":status": 404,
@@ -163,27 +180,26 @@ export const mkApp = (server: http2.Http2SecureServer) => {
         return;
       }
 
-      // let rawQueryData = ''
-      let queryData: Json = {};
-      console.log("PATH", path);
-
-      if (!spec.withData) {
-        // @ts-ignore
+      if (spec.type === "plain") {
+        await spec.handler({ stream, params });
+      } else if (spec.type === "with-query") {
+        const query = url.parse(path).query;
+        if (!query) throw new Error("Expected query to be defined"); // TODO Should be 400
+        let queryData = Json.parse(qs.parse(query));
         await spec.handler({ stream, params, queryData });
-      } else {
-        let rawBodyData: string | undefined = undefined;
+      } else if (spec.type === "with-body") {
+        let rawBodyData: string = "";
 
         stream.setEncoding("utf8");
 
         stream.on("data", (chunk) => {
-          if (rawBodyData === undefined) {
-            rawBodyData = "";
-          }
           rawBodyData += chunk;
         });
 
         stream.on("end", async () => {
-          if (!spec?.withData) throw new Error("IllegalStateException");
+          // This line helps typescript but should ideally not be necessary
+          if (spec?.type !== "with-body")
+            throw new Error("IllegalStateException3");
 
           let bodyData: Json;
 
@@ -201,10 +217,10 @@ export const mkApp = (server: http2.Http2SecureServer) => {
             return;
           }
 
-          if (!bodyData) throw new Error("IllegalStateException");
+          if (!bodyData) throw new Error("IllegalStateException4");
 
           try {
-            await spec.handler({ stream, params, queryData, bodyData });
+            await spec.handler({ stream, params, bodyData });
           } catch (err) {
             const msg = "500 Internal Server Error";
             console.error(msg, err);
@@ -229,5 +245,5 @@ export const mkApp = (server: http2.Http2SecureServer) => {
     }
   });
 
-  return { handle, handleWithData };
+  return { handle: registerHandler };
 };

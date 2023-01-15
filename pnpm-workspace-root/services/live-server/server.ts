@@ -7,6 +7,7 @@ import {
 } from "@workspace/common/types";
 import { mkApp } from "@workspace/typed-http2-handler";
 import fs from "node:fs";
+import {z} from "zod";
 import http2 from "node:http2";
 import { initRedis, redisClient } from "./redis.js";
 import { SsePubSub } from "./sse-pub-sub.js";
@@ -70,11 +71,11 @@ await initRedis();
 
 // Channel
 
-app.handleWithData({
+app.handle({
   method: "POST",
   pathRegExp: "^/channel/(?<channelName>.+?)/pub$",
   bodySchema: PubMsgs,
-  handler: async ({ stream, params, bodyData, queryData }) => {
+  handler: async ({ stream, params, bodyData }) => {
     await ssePubSub.publish(params.channelName, JSON.stringify(bodyData));
     stream.respond(corsHeaders);
     stream.end();
@@ -145,7 +146,7 @@ app.handle({
 //   }
 // );
 
-app.handleWithData({
+app.handle({
   method: "POST",
   pathRegExp: "^/presence/(?<channelName>.+)/pub$",
   bodySchema: PresenceUpsert,
@@ -167,9 +168,10 @@ app.handleWithData({
 
 app.handle({
   method: "GET",
-  pathRegExp: "^/presence/(?<channelName>.+)/sub/(?<clientId>.+)$",
-  handler: async ({ stream, params }) => {
-    const ch = `presence:${params.channelName}`;
+  pathRegExp: "^/presence/sub\?",
+  querySchema: z.object({channelId: z.string(), clientId: z.string()}),
+  handler: async ({ stream, queryData }) => {
+    const ch = `presence:${queryData.channelId}`;
 
     await ssePubSub.subscribe(ch, stream);
 
@@ -181,10 +183,10 @@ app.handle({
 
     stream.on("close", async () => {
       ssePubSub.unsubscribe(ch, stream);
-      redisClient.HDEL(ch, params.clientId);
+      redisClient.HDEL(ch, queryData.clientId);
       const update: PresenceDelete = {
         type: "delete",
-        clientId: params.clientId,
+        clientId: queryData.clientId,
       };
       ssePubSub.publish(ch, JSON.stringify([update]));
     });

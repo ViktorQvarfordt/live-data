@@ -48,17 +48,13 @@ const normalize = (rows: Message[]): Message[] => {
 const coreServerHost = "https://localhost.direct:8000";
 const liveServerHost = "https://localhost.direct:8001";
 
-const channelName = "chan1";
+const channelId = "chan1";
 
 const PresenceView = () => {
   const [presenceMap, setPresenceMap] = useState<Record<string, unknown>>();
 
   useEffect(() => {
-    const provider = new PresenceProvider(
-      `${liveServerHost}/presence/${channelName}/get`,
-      `${liveServerHost}/presence/${channelName}/pub`,
-      `${liveServerHost}/presence/${channelName}/sub`
-    );
+    const provider = new PresenceProvider({ host: liveServerHost, channelId })
 
     provider.on("update", (map) =>
       setPresenceMap(Object.fromEntries(map.entries()))
@@ -109,8 +105,8 @@ const useChatMessages = (): [Message[], (op: Op) => void] => {
 
   useEffect(() => {
     const provider = new SseProvider(
-      `${coreServerHost}/chat/${channelName}/get`,
-      `${liveServerHost}/channel/${channelName}/sub`
+      `${coreServerHost}/chat/${channelId}/get`,
+      `${liveServerHost}/channel/${channelId}/sub`
     );
 
     provider.on("update", (str) => {
@@ -281,7 +277,7 @@ const ChatView = () => {
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            upsertMessage({ chatId: channelName, messageId: mkId(), text });
+            upsertMessage({ chatId: channelId, messageId: mkId(), text });
             setText("");
           }
         }}
@@ -289,7 +285,7 @@ const ChatView = () => {
 
       <button
         onClick={() => {
-          upsertMessage({ chatId: channelName, messageId: mkId(), text });
+          upsertMessage({ chatId: channelId, messageId: mkId(), text });
           setText("");
         }}
       >
