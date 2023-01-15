@@ -264,7 +264,7 @@ const ChatView = () => {
 
   return (
     <>
-      <h2>Chat messages</h2>
+      <h2>Messages</h2>
       {chatMessages.length > 0 && asNonNullable(chatMessages[0]).chatSequenceId !== 0 && "..."}
       {chatMessages.map((message) => (
         <MessageComp2
