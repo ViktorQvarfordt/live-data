@@ -110,13 +110,15 @@ app.handle({
 
 app.handle({
   method: "GET",
-  pathRegExp: "^/presence/(?<channelName>.+?)/get$",
-  handler: async ({ stream, params }) => {
-    const ch = `presence:${params.channelName}`;
+  pathRegExp: "^/presence/get$",
+  querySchema: z.object({channelId: z.string(), clientId: z.string()}),
+  handler: async ({ stream, queryData }) => {
+    const ch = `presence:${queryData.channelId}`;
     const obj = await redisClient.HGETALL(ch);
     const updates: PresenceUpdates = Object.entries(obj).map(
       ([clientId, str]) => ({
         type: "upsert",
+        channelId: queryData.channelId,
         clientId,
         data: JSON.parse(str),
       })
@@ -148,10 +150,10 @@ app.handle({
 
 app.handle({
   method: "POST",
-  pathRegExp: "^/presence/(?<channelName>.+)/pub$",
+  pathRegExp: "^/presence/pub$",
   bodySchema: PresenceUpsert,
-  handler: async ({ stream, params, bodyData }) => {
-    const ch = `presence:${params.channelName}`;
+  handler: async ({ stream, bodyData }) => {
+    const ch = `presence:${bodyData.channelId}`;
 
     await redisClient
       .MULTI()
@@ -186,6 +188,7 @@ app.handle({
       redisClient.HDEL(ch, queryData.clientId);
       const update: PresenceDelete = {
         type: "delete",
+        channelId: queryData.channelId,
         clientId: queryData.clientId,
       };
       ssePubSub.publish(ch, JSON.stringify([update]));

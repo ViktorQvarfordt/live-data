@@ -71,8 +71,8 @@ export class PresenceProvider extends TypedEventEmitter<{
     super();
     console.debug("Presence init");
 
-    (this.getUrl = `${host}/presence/${channelId}/get`),
-      (this.pubUrl = `${host}/presence/${channelId}/pub`),
+    (this.getUrl = `${host}/presence/get?channelId=${channelId}`),
+      (this.pubUrl = `${host}/presence/pub?channelId=${channelId}`),
       (this.subUrl = `${host}/presence/sub?channelId=${channelId}&clientId=${this.clientId}`);
 
     this.states = new Map();
