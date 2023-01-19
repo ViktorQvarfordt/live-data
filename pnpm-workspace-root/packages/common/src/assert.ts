@@ -10,7 +10,7 @@ export function isNonNullable<T>(val: T): val is NonNullable<T> {
 export function assertIsNonNullable<T>(val: T): asserts val is NonNullable<T> {
   if (!isNonNullable(val)) {
     throw new Error(
-      `AssertionError: Expected ${JSON.stringify(val)} to be defined.`
+      `AssertionError: Expected ${JSON.stringify(val)} to be NonNullable.`
     );
   }
 }
