@@ -59,6 +59,7 @@ type PresenceMap = Map<ClientId, Json>;
 export class PresenceProvider extends TypedEventEmitter<{
   update: (presenceMap: PresenceMap) => void;
 }> {
+  private channelId: string;
   private getUrl: string;
   private pubUrl: string;
   private subUrl: string;
@@ -71,9 +72,10 @@ export class PresenceProvider extends TypedEventEmitter<{
     super();
     console.debug("Presence init");
 
-    (this.getUrl = `${host}/presence/get?channelId=${channelId}`),
-      (this.pubUrl = `${host}/presence/pub?channelId=${channelId}`),
-      (this.subUrl = `${host}/presence/sub?channelId=${channelId}&clientId=${this.clientId}`);
+    this.channelId = channelId
+    this.getUrl = `${host}/presence/get?channelId=${channelId}`;
+    this.pubUrl = `${host}/presence/pub?channelId=${channelId}`;
+    this.subUrl = `${host}/presence/sub?channelId=${channelId}&clientId=${this.clientId}`;
 
     this.states = new Map();
   }
@@ -109,7 +111,7 @@ export class PresenceProvider extends TypedEventEmitter<{
   async setLocalState(data: PresenceUpsert["data"]) {
     await fetch(this.pubUrl, {
       method: "post",
-      body: JSON.stringify({ type: "upsert", clientId: this.clientId, data }),
+      body: JSON.stringify({ type: "upsert", clientId: this.clientId, channelId: this.channelId, data }),
     });
   }
 
