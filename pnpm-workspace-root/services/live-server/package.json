@@ -2,7 +2,7 @@
   "type": "module",
   "scripts": {
     "prod": "ts-node --esm --swc server.ts",
-    "dev": "nodemon --ext ts --delay 200ms --exec 'pnpm run prod'",
+    "dev": "nodemon --watch . --watch ../../packages/typed-http2-handler/dist --watch ../../packages/common/dist --ext ts,tsx,js,jsx,d.ts --delay 200ms --exec 'pnpm run prod'",
     "check": "tsc --noEmit"
   },
   "dependencies": {
