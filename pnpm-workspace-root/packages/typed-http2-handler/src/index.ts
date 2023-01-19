@@ -4,6 +4,7 @@ import url from "node:url";
 import { Json } from "@workspace/common/types";
 import { RegExCaptureResult, TypedRegEx } from "typed-regex";
 import type { z } from "zod";
+import { asNonNullable, assertIsNonNullable } from "@workspace/common/assert";
 
 export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -144,14 +145,13 @@ export const mkApp = (server: http2.Http2SecureServer) => {
   }
 
   server.on("stream", async (stream, headers) => {
-    console.log("handling");
     try {
-      const path = headers[":path"];
-      const method = headers[":method"];
+      const method = asNonNullable(headers[":method"])
+      const path = asNonNullable(headers[":path"])
+      const { query, pathname } = url.parse(path);
+      assertIsNonNullable(pathname)
 
       console.log("stream", method, path);
-
-      if (!path || !method) return;
 
       let spec: HandlerSpec<string, Json, Json> | undefined = undefined;
       let params: RegExCaptureResult<string> = {};
@@ -160,8 +160,8 @@ export const mkApp = (server: http2.Http2SecureServer) => {
         if (_spec.method !== method) continue;
 
         const typedRegEx = TypedRegEx(_spec.pathRegExp);
-        if (typedRegEx.isMatch(path)) {
-          const _params = typedRegEx.captures(path);
+        if (typedRegEx.isMatch(pathname)) {
+          const _params = typedRegEx.captures(pathname);
           if (_params) {
             params = _params;
           }
@@ -183,7 +183,6 @@ export const mkApp = (server: http2.Http2SecureServer) => {
       if (spec.type === "plain") {
         await spec.handler({ stream, params });
       } else if (spec.type === "with-query") {
-        const query = url.parse(path).query;
         if (!query) throw new Error("Expected query to be defined"); // TODO Should be 400
         let queryData = Json.parse(qs.parse(query));
         await spec.handler({ stream, params, queryData });
@@ -208,7 +207,10 @@ export const mkApp = (server: http2.Http2SecureServer) => {
           } catch (err) {
             const msg =
               "400 Bad Request - The sent data could not be parsed according to the schema.";
-            console.warn(msg, err, rawBodyData);
+            console.warn(msg)
+            console.warn(err)
+            console.warn(rawBodyData)
+            console.warn(spec.bodySchema)
             stream.respond({
               ...corsHeaders,
               ":status": 400,
