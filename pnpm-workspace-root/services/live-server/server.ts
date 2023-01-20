@@ -9,7 +9,7 @@ import * as db from "@workspace/server-common/db";
 import fs from "node:fs";
 import { z } from "zod";
 import http2 from "node:http2";
-import { initRedis, redisClient } from "./redis.js";
+import { initRedis } from "./redis.js";
 import { SsePubSub } from "./sse-pub-sub.js";
 
 const state = { isShutdown: false };
@@ -146,21 +146,26 @@ const groupBy = <T>(xs: T[], key: string): Record<string, T[]> => {
   }, {});
 };
 
-// TODO Run this with queue
+// TODO This can use a shared queue instead. It would be nice to explore that even though this ticker is fine.
 setInterval(async () => {
-  const updates = await db.getAll(
-    PresenceDelete,
-    db.sql`
-    delete from presence where updated_at < now() - interval '5 seconds'
-    returning channel_id, client_id, 'delete' as type
-  `
-  );
+  db.transaction(async () => {
+    const updates = await db.getAll(
+      PresenceDelete,
+      db.sql`
+        delete from presence where updated_at < now() - interval '10 seconds'
+        returning channel_id, client_id, 'delete' as type
+      `
+    );
 
-  const updatesByChannel = groupBy(updates, 'channelId')
+    const updatesByChannel = groupBy(updates, "channelId");
 
-  for (const channelId in updatesByChannel) {
-    ssePubSub.publish(`presence:${channelId}`, JSON.stringify(updatesByChannel[channelId]));
-  }
+    for (const [channelId, updates] of Object.entries(updatesByChannel)) {
+      ssePubSub.publish(
+        `presence:${channelId}`,
+        JSON.stringify(updates)
+      );
+    }
+  });
 }, 1000);
 
 app.handle({

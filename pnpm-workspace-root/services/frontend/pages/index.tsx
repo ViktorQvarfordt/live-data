@@ -4,6 +4,7 @@ import { createId } from "@workspace/common/id";
 import { PresenceProvider, SseProvider } from "@workspace/live-provider"
 import { Message, Messages, Op } from "@workspace/client/types.js";
 import { asNonNullable, isNotUndefined } from "@workspace/common/assert";
+import { config } from "@workspace/common/config";
 
 const normalize = (rows: Message[]): Message[] => {
   console.log("normalize", { rows });
@@ -45,16 +46,13 @@ const normalize = (rows: Message[]): Message[] => {
   return Messages.parse(result);
 };
 
-const coreServerHost = "https://localhost.direct:8000";
-const liveServerHost = "https://localhost.direct:8001";
-
 const channelId = "chan1";
 
 const PresenceView = () => {
   const [presenceMap, setPresenceMap] = useState<Record<string, unknown>>();
 
   useEffect(() => {
-    const provider = new PresenceProvider({ host: liveServerHost, channelId })
+    const provider = new PresenceProvider({ host: config.liveServerHost, channelId })
 
     provider.on("update", (map) =>
       setPresenceMap(Object.fromEntries(map.entries()))
@@ -105,8 +103,8 @@ const useChatMessages = (): [Message[], (op: Op) => void] => {
 
   useEffect(() => {
     const provider = new SseProvider(
-      `${coreServerHost}/chat/${channelId}/get`,
-      `${liveServerHost}/channel/${channelId}/sub`
+      `${config.coreServerHost}/chat/${channelId}/get`,
+      `${config.liveServerHost}/channel/${channelId}/sub`
     );
 
     provider.on("update", (str) => {
@@ -160,7 +158,7 @@ const useChatMessages = (): [Message[], (op: Op) => void] => {
         }
         return normalize(updated);
       });
-      await fetch(`${coreServerHost}/chat/upsert`, {
+      await fetch(`${config.coreServerHost}/chat/upsert`, {
         method: "post",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(op),

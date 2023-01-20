@@ -8,6 +8,7 @@
     "./id": "./dist/id.js",
     "./types": "./dist/types.js",
     "./assert": "./dist/assert.js",
+    "./config": "./dist/config.js",
     "./typed-event-emitter": "./dist/typed-event-emitter.js"
   },
   "files": [
