@@ -54,8 +54,8 @@ const PresenceView = () => {
   useEffect(() => {
     const provider = new PresenceProvider({ host: config.liveServerHost, channelId })
 
-    provider.on("update", (map) =>
-      setPresenceMap(Object.fromEntries(map.entries()))
+    provider.on("update", () =>
+      setPresenceMap(Object.fromEntries(provider.states.entries()))
     );
 
     provider.init();

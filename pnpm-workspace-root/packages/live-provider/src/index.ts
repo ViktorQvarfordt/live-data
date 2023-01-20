@@ -6,38 +6,33 @@ export class SseProvider extends TypedEventEmitter<{
   load: (msg: string) => void;
   update: (msg: string) => void;
 }> {
-  eventSource: EventSource | undefined = undefined;
-  state: "uninitialized" | "initializing" | "initialized" = "uninitialized";
-
+  private initState: { eventSource: EventSource } | undefined = undefined;
   constructor(public getUrl: string, public sseUrl: string) {
     super();
   }
 
-  init() {
-    if (this.state !== "uninitialized") {
-      throw new Error("init() already called");
-    }
-    this.state = "initializing";
+  public init() {
+    if (this.initState) throw new Error("IllegalStateException");
 
-    this.eventSource = new EventSource(this.sseUrl);
+    const eventSource = new EventSource(this.sseUrl);
 
-    this.eventSource.addEventListener("message", (event) => {
+    eventSource.addEventListener("message", (event) => {
       const msg = event.data;
       console.debug("EntityProvider eventSource message", msg);
       this.emit("update", msg);
     });
 
-    this.eventSource.addEventListener("error", () => {
+    eventSource.addEventListener("error", () => {
       console.error("EntityProvider eventSource error");
     });
 
     // Called when eventSource first opens and when recovering from error.
-    this.eventSource.addEventListener("open", () => {
+    eventSource.addEventListener("open", () => {
       console.debug("EntityProvider eventSource open");
       this.get();
     });
 
-    this.state = "initialized";
+    this.initState = { eventSource };
   }
 
   private async get() {
@@ -46,10 +41,12 @@ export class SseProvider extends TypedEventEmitter<{
     this.emit("load", msg);
   }
 
-  destroy() {
+  public destroy() {
     console.debug("Provider destroy");
+    if (!this.initState) throw new Error("IllegalStateException");
     super.off();
-    this.eventSource?.close();
+    this.initState.eventSource.close();
+    this.initState = undefined;
   }
 }
 
@@ -57,34 +54,38 @@ type ClientId = string;
 type PresenceMap = Map<ClientId, Json>;
 
 export class PresenceProvider extends TypedEventEmitter<{
-  update: (presenceMap: PresenceMap) => void;
+  update: () => void;
 }> {
   private channelId: string;
   private getUrl: string;
   private pubUrl: string;
   private subUrl: string;
 
-  private states: PresenceMap;
-  private sseProvider: SseProvider | undefined = undefined;
+  private initState: { sseProvider: SseProvider } | undefined = undefined;
+
+  public states: PresenceMap = new Map();
   public clientId: string = createId();
 
   constructor({ host, channelId }: { host: string; channelId: string }) {
-    super();
     console.debug("Presence init");
 
-    this.channelId = channelId
+    super();
+
+    this.channelId = channelId;
     this.getUrl = `${host}/presence/get?channelId=${channelId}`;
     this.pubUrl = `${host}/presence/pub?channelId=${channelId}`;
     this.subUrl = `${host}/presence/sub?channelId=${channelId}&clientId=${this.clientId}`;
-
-    this.states = new Map();
   }
 
-  init() {
-    this.sseProvider = new SseProvider(this.getUrl, this.subUrl);
-    this.sseProvider.on("load", this.onLoad.bind(this));
-    this.sseProvider.on("update", this.onUpdate.bind(this));
-    this.sseProvider.init();
+  public init() {
+    if (this.initState) throw new Error("IllegalStateException");
+
+    const sseProvider = new SseProvider(this.getUrl, this.subUrl);
+    sseProvider.on("load", this.onLoad.bind(this));
+    sseProvider.on("update", this.onUpdate.bind(this));
+    sseProvider.init();
+
+    this.initState = { sseProvider };
 
     this.setLocalState({ timeJoined: new Date().toISOString() });
   }
@@ -95,6 +96,8 @@ export class PresenceProvider extends TypedEventEmitter<{
   }
 
   private onUpdate(msg: string) {
+    if (!this.initState) throw new Error("IllegalStateException");
+
     const updates = PresenceUpdates.parse(JSON.parse(msg));
 
     for (const update of updates) {
@@ -105,23 +108,31 @@ export class PresenceProvider extends TypedEventEmitter<{
       }
     }
 
-    this.emit("update", this.states);
+    this.emit("update");
   }
 
-  async setLocalState(data: PresenceUpsert["data"]) {
+  public async setLocalState(data: PresenceUpsert["data"]) {
     await fetch(this.pubUrl, {
       method: "post",
-      body: JSON.stringify({ type: "upsert", clientId: this.clientId, channelId: this.channelId, data }),
+      body: JSON.stringify({
+        type: "upsert",
+        clientId: this.clientId,
+        channelId: this.channelId,
+        data,
+      }),
     });
   }
 
-  getLocalState(): PresenceUpsert["data"] | undefined {
+  public getLocalState(): PresenceUpsert["data"] | undefined {
+    if (!this.initState) throw new Error("IllegalStateException");
     return this.states.get(this.clientId);
   }
 
-  destroy() {
+  public destroy() {
     console.debug("Presence destroy");
-    this.sseProvider?.destroy();
+    if (!this.initState) throw new Error("IllegalStateException");
     super.off();
+    this.initState.sseProvider.destroy();
+    this.initState = undefined;
   }
 }
