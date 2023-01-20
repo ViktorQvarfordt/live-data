@@ -1,6 +1,6 @@
 import { useState, useEffect, FC, useCallback } from "react";
 import _ from "lodash";
-import { mkId } from "@workspace/common/id";
+import { createId } from "@workspace/common/id";
 import { PresenceProvider, SseProvider } from "@workspace/live-provider"
 import { Message, Messages, Op } from "@workspace/client/types.js";
 import { asNonNullable, isNotUndefined } from "@workspace/common/assert";
@@ -62,15 +62,15 @@ const PresenceView = () => {
 
     provider.init();
 
-    // const handler = (e: MouseEvent) => {
-    //   provider.setLocalState({ x: e.clientX, y: e.clientY });
-    // };
+    const handler = (e: MouseEvent) => {
+      provider.setLocalState({ x: e.clientX, y: e.clientY });
+    };
 
-    // document.addEventListener("mousemove", handler);
+    document.addEventListener("click", handler);
 
     return () => {
       provider.destroy();
-      // document.removeEventListener("mousemove", handler);
+      document.removeEventListener("click", handler);
     };
   }, []);
 
@@ -277,7 +277,7 @@ const ChatView = () => {
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            upsertMessage({ chatId: channelId, messageId: mkId(), text });
+            upsertMessage({ chatId: channelId, messageId: createId(), text });
             setText("");
           }
         }}
@@ -285,7 +285,7 @@ const ChatView = () => {
 
       <button
         onClick={() => {
-          upsertMessage({ chatId: channelId, messageId: mkId(), text });
+          upsertMessage({ chatId: channelId, messageId: createId(), text });
           setText("");
         }}
       >
@@ -331,7 +331,7 @@ const View = () => {
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               entityType: "chatMessage",
-              entityId: mkId(),
+              entityId: createId(),
               data: { text: `Hello, world! ${Math.random()}` },
             }),
           });

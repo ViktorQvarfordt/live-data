@@ -6,6 +6,6 @@
   "references": [
     { "path": "./packages/common" },
     { "path": "./packages/live-provider" },
-    { "path": "./packages/typed-http2-handler" }
+    { "path": "./packages/server-common" }
   ]
 }

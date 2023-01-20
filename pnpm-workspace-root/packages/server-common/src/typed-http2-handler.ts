@@ -12,7 +12,7 @@ export const corsHeaders = {
   "Access-Control-Allow-Methods": "*",
 };
 
-export type Method =
+export type HttpMethod =
   | "GET"
   | "HEAD"
   | "POST"
@@ -56,7 +56,7 @@ type HandlerSpec<
   BodyData extends Json,
   QueryData extends Json
 > = {
-  method: Method;
+  method: HttpMethod;
   pathRegExp: Re;
 } & (
   | {
@@ -75,26 +75,26 @@ type HandlerSpec<
     }
 );
 
-export const mkApp = (server: http2.Http2SecureServer) => {
+export const createApp = (server: http2.Http2SecureServer) => {
   const handlerSpecs: HandlerSpec<string, Json, Json>[] = [];
 
   // with-query
   function registerHandler<Re extends string, QueryData extends Json>(_: {
-    method: Method;
+    method: HttpMethod;
     pathRegExp: Re;
     querySchema: z.Schema<QueryData>;
     handler: HandlerWithQueryData<Re, QueryData>;
   }): void;
   // with-data
   function registerHandler<Re extends string, BodyData extends Json>(_: {
-    method: Method;
+    method: HttpMethod;
     pathRegExp: Re;
     bodySchema: z.Schema<BodyData>;
     handler: HandlerWithBodyData<Re, BodyData>;
   }): void;
   // plain
   function registerHandler<Re extends string, QueryData extends Json>(_: {
-    method: Method;
+    method: HttpMethod;
     pathRegExp: Re;
     handler: Handler<Re>;
   }): void;
@@ -110,7 +110,7 @@ export const mkApp = (server: http2.Http2SecureServer) => {
     bodySchema,
     handler,
   }: {
-    method: Method;
+    method: HttpMethod;
     pathRegExp: Re;
     querySchema?: z.Schema<QueryData>;
     bodySchema?: z.Schema<BodyData>;

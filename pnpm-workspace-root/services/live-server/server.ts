@@ -1,13 +1,13 @@
 import {
+  Json,
   PresenceDelete,
-  PresenceHeartbeat,
-  PresenceUpdates,
   PresenceUpsert,
   PubMsgs,
 } from "@workspace/common/types";
-import { mkApp } from "@workspace/typed-http2-handler";
+import { createApp } from "@workspace/server-common/typed-http2-handler";
+import * as db from "@workspace/server-common/db";
 import fs from "node:fs";
-import {z} from "zod";
+import { z } from "zod";
 import http2 from "node:http2";
 import { initRedis, redisClient } from "./redis.js";
 import { SsePubSub } from "./sse-pub-sub.js";
@@ -54,7 +54,7 @@ const server = http2.createSecureServer(options);
 
 server.on("error", (err) => console.error(err));
 
-const app = mkApp(server);
+const app = createApp(server);
 
 app.handle({
   method: "OPTIONS",
@@ -79,7 +79,7 @@ app.handle({
     await ssePubSub.publish(params.channelName, JSON.stringify(bodyData));
     stream.respond(corsHeaders);
     stream.end();
-  }
+  },
 });
 
 app.handle({
@@ -103,7 +103,7 @@ app.handle({
     stream.on("finish", handler);
     stream.on("drain", handler);
     stream.on("unpipe", handler);
-  }
+  },
 });
 
 // Presence
@@ -111,67 +111,86 @@ app.handle({
 app.handle({
   method: "GET",
   pathRegExp: "^/presence/get$",
-  querySchema: z.object({channelId: z.string(), clientId: z.string()}),
+  querySchema: z.object({ channelId: z.string(), clientId: z.string() }),
   handler: async ({ stream, queryData }) => {
-    const ch = `presence:${queryData.channelId}`;
-    const obj = await redisClient.HGETALL(ch);
-    const updates: PresenceUpdates = Object.entries(obj).map(
-      ([clientId, str]) => ({
-        type: "upsert",
-        channelId: queryData.channelId,
-        clientId,
-        data: JSON.parse(str),
-      })
+    const states = await db.getAll(
+      z.object({
+        channelId: z.string(),
+        clientId: z.string(),
+        createdAt: z.string(),
+        updatedAt: z.string(),
+        data: Json,
+      }),
+      db.sql`
+        select * from presence where channel_id = ${queryData.channelId}
+      `
     );
+
+    const updates: PresenceUpsert[] = states.map((state) => ({
+      type: "upsert",
+      channelId: queryData.channelId,
+      clientId: state.clientId,
+      data: state.data,
+      // TODO include timestamps
+    }));
     stream.respond({ ...corsHeaders, "content-type": "application/json" });
     stream.end(JSON.stringify(updates));
-  }
+  },
 });
 
-// app.handleWithData(
-//   "POST",
-//   "^/presence/heartbeat$",
-//   PresenceHeartbeat,
-//   async ({ stream, data }) => {
-//     const ch = `presence:${data.channelId}`;
+const groupBy = <T>(xs: T[], key: string): Record<string, T[]> => {
+  return xs.reduce((rv, x) => {
+    // @ts-ignore
+    (rv[x[key]] = rv[x[key]] || []).push(x);
+    return rv;
+  }, {});
+};
 
-//     await redisClient
-//       .MULTI()
-//       .HSET(ch, data.clientId, JSON.stringify(data.data))
-//       .EXPIRE(ch, 5)
-//       .EXEC();
+// TODO Run this with queue
+setInterval(async () => {
+  const updates = await db.getAll(
+    PresenceDelete,
+    db.sql`
+    delete from presence where updated_at < now() - interval '5 seconds'
+    returning channel_id, client_id, 'delete' as type
+  `
+  );
 
-//     await ssePubSub.publish(ch, JSON.stringify([data]));
+  const updatesByChannel = groupBy(updates, 'channelId')
 
-//     stream.respond(corsHeaders);
-//     stream.end();
-//   }
-// );
+  for (const channelId in updatesByChannel) {
+    ssePubSub.publish(`presence:${channelId}`, JSON.stringify(updatesByChannel[channelId]));
+  }
+}, 1000);
 
 app.handle({
   method: "POST",
   pathRegExp: "^/presence/pub$",
   bodySchema: PresenceUpsert,
-  handler: async ({ stream, bodyData }) => {
-    const ch = `presence:${bodyData.channelId}`;
+  handler: async ({ stream, bodyData: update }) => {
+    await db.query(
+      db.sql`
+        insert into presence (channel_id, client_id, created_at, updated_at, data) values
+        (${update.channelId}, ${update.clientId}, now(), now(), ${update.data})
+        on conflict (channel_id, client_id) do update
+        set updated_at = now(), data = ${update.data}
+      `
+    );
 
-    await redisClient
-      .MULTI()
-      .HSET(ch, bodyData.clientId, JSON.stringify(bodyData.data))
-      .EXPIRE(ch, 5)
-      .EXEC();
-
-    await ssePubSub.publish(ch, JSON.stringify([bodyData]));
+    await ssePubSub.publish(
+      `presence:${update.channelId}`,
+      JSON.stringify([update])
+    );
 
     stream.respond(corsHeaders);
     stream.end();
-  }
+  },
 });
 
 app.handle({
   method: "GET",
-  pathRegExp: "^/presence/sub\?",
-  querySchema: z.object({channelId: z.string(), clientId: z.string()}),
+  pathRegExp: "^/presence/sub?",
+  querySchema: z.object({ channelId: z.string(), clientId: z.string() }),
   handler: async ({ stream, queryData }) => {
     const ch = `presence:${queryData.channelId}`;
 
@@ -185,7 +204,12 @@ app.handle({
 
     stream.on("close", async () => {
       ssePubSub.unsubscribe(ch, stream);
-      redisClient.HDEL(ch, queryData.clientId);
+
+      await db.query(db.sql`
+        delete from presence where
+        channel_id = ${queryData.channelId} and client_id = ${queryData.clientId}
+      `);
+
       const update: PresenceDelete = {
         type: "delete",
         channelId: queryData.channelId,

@@ -5,7 +5,8 @@
     "packages:build": "tsc --build",
     "packages:check": "tsc --noEmit",
     "services:dev": "pnpm run --parallel --filter './services/*' dev",
-    "services:check": "pnpm run --parallel --filter './services/*' check"
+    "services:check": "pnpm run --parallel --filter './services/*' check",
+    "clean": "pnpm run --parallel clean"
   },
   "devDependencies": {
     "typescript": "^4.9.4"

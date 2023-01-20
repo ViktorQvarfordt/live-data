@@ -34,46 +34,46 @@ importers:
       '@tsconfig/strictest': 1.0.2
       typescript: 4.9.4
 
-  packages/typed-http2-handler:
+  packages/server-common:
     specifiers:
       '@tsconfig/strictest': ^1.0.2
       '@types/node': ^18.11.18
+      '@types/pg': ^8.6.6
       '@workspace/common': workspace:*
+      pg: ^8.8.0
+      redis: ^4.5.1
+      sql-template-strings: ^2.2.2
       typed-regex: ^0.0.8
       typescript: ^4.9.4
       zod: ^3.20.2
     dependencies:
       '@workspace/common': link:../common
+      pg: 8.8.0
+      redis: 4.5.1
+      sql-template-strings: 2.2.2
       typed-regex: 0.0.8
       zod: 3.20.2
     devDependencies:
       '@tsconfig/strictest': 1.0.2
       '@types/node': 18.11.18
+      '@types/pg': 8.6.6
       typescript: 4.9.4
 
   services/core-server:
     specifiers:
       '@swc/core': ^1.3.25
       '@types/node': ^18.11.18
-      '@types/pg': ^8.6.6
-      '@workspace/typed-http2-handler': workspace:*
+      '@workspace/server-common': workspace:*
       nodemon: ^2.0.20
-      pg: ^8.8.0
-      redis: ^4.5.1
-      sql-template-strings: ^2.2.2
       ts-node: ^10.9.1
       typescript: ^4.9.4
       zod: ^3.20.2
     dependencies:
-      '@workspace/typed-http2-handler': link:../../packages/typed-http2-handler
-      pg: 8.8.0
-      redis: 4.5.1
-      sql-template-strings: 2.2.2
+      '@workspace/server-common': link:../../packages/server-common
       zod: 3.20.2
     devDependencies:
       '@swc/core': 1.3.25
       '@types/node': 18.11.18
-      '@types/pg': 8.6.6
       nodemon: 2.0.20
       ts-node: 10.9.1_h4s5tc4wq4kcse7jq5bao6xoy4
       typescript: 4.9.4
@@ -114,7 +114,7 @@ importers:
       '@swc/core': ^1.3.25
       '@types/node': ^18.11.18
       '@workspace/common': workspace:*
-      '@workspace/typed-http2-handler': workspace:*
+      '@workspace/server-common': workspace:*
       nodemon: ^2.0.20
       redis: ^4.5.1
       ts-node: ^10.9.1
@@ -122,7 +122,7 @@ importers:
       zod: ^3.20.2
     dependencies:
       '@workspace/common': link:../../packages/common
-      '@workspace/typed-http2-handler': link:../../packages/typed-http2-handler
+      '@workspace/server-common': link:../../packages/server-common
       redis: 4.5.1
       zod: 3.20.2
     devDependencies:

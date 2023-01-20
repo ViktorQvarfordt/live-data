@@ -1,4 +1,4 @@
-import { mkId } from "@workspace/common/id";
+import { createId } from "@workspace/common/id";
 import { TypedEventEmitter } from "@workspace/common/typed-event-emitter";
 import { Json, PresenceUpdates, PresenceUpsert } from "@workspace/common/types";
 
@@ -66,7 +66,7 @@ export class PresenceProvider extends TypedEventEmitter<{
 
   private states: PresenceMap;
   private sseProvider: SseProvider | undefined = undefined;
-  public clientId: string = mkId();
+  public clientId: string = createId();
 
   constructor({ host, channelId }: { host: string; channelId: string }) {
     super();

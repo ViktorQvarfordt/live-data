@@ -1,6 +1,6 @@
 import pg from "pg";
 import { SQL, SQLStatement } from "sql-template-strings";
-import { z } from "zod";
+import type { z } from "zod";
 
 export const sql = SQL;
 
@@ -104,6 +104,16 @@ async function init() {
   await query(sql`
     -- DROP TABLE chat_messages;
     -- DROP TABLE entity_versions;
+
+    CREATE TABLE IF NOT EXISTS presence (
+      channel_id TEXT NOT NULL,
+      client_id TEXT NOT NULL,
+      -- user_id TEXT NOT NULL, -- TODO Add this when auth is in place
+      created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      data JSONB,
+      UNIQUE (channel_id, client_id)
+    );
 
     CREATE TABLE IF NOT EXISTS chat_messages (
       message_id TEXT PRIMARY KEY,

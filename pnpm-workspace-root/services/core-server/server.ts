@@ -1,8 +1,8 @@
 import http2 from "node:http2";
 import fs from "node:fs";
-import { sql, getAll, getExactlyOne } from "./db.js";
+import * as db from "@workspace/server-common/db";
 import { z } from "zod";
-import { Method, mkApp } from "@workspace/typed-http2-handler";
+import { HttpMethod, createApp } from "@workspace/server-common/typed-http2-handler";
 import { config } from "./config.js";
 
 const state = { isShutdown: false };
@@ -47,7 +47,7 @@ const server = http2.createSecureServer(options);
 
 server.on("error", (err) => console.error(err));
 
-const app = mkApp(server);
+const app = createApp(server);
 
 app.handle({
   method: "OPTIONS",
@@ -111,7 +111,7 @@ const ChatUpsert = ChatRow.pick({
 const makeHttp2Request = (
   host: string,
   path: string,
-  method: Method,
+  method: HttpMethod,
   body: string
 ): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -144,20 +144,20 @@ app.handle({
     // SELECT DISTINCT ON is not very fast by default, it can be optimized:
     // https://wiki.postgresql.org/wiki/Loose_indexscan
     // https://www.timescale.com/blog/how-we-made-distinct-queries-up-to-8000x-faster-on-postgresql/
-    const entities = await getAll(
+    const entities = await db.getAll(
       ChatRow,
-      sql`
-      WITH entities AS (
-        SELECT DISTINCT ON (message_id) *
-        FROM chat_messages WHERE
-        chat_id = ${params.chatId}
-        ORDER BY message_id, message_sequence_id DESC
-      )
-      SELECT * FROM entities
-      WHERE is_deleted IS NOT TRUE
-      ORDER BY created_at DESC
-      LIMIT 10
-    `
+        db.sql`
+        WITH entities AS (
+          SELECT DISTINCT ON (message_id) *
+          FROM chat_messages WHERE
+          chat_id = ${params.chatId}
+          ORDER BY message_id, message_sequence_id DESC
+        )
+        SELECT * FROM entities
+        WHERE is_deleted IS NOT TRUE
+        ORDER BY created_at DESC
+        LIMIT 10
+      `
     );
 
     stream.respond({ ...corsHeaders, "content-type": "application/json" });
@@ -170,9 +170,9 @@ app.handle({
   pathRegExp: "^/chat/upsert$",
   bodySchema: ChatUpsert,
   handler: async ({ stream, bodyData }) => {
-    const result = await getExactlyOne(
+    const result = await db.getExactlyOne(
       InsertResult,
-      sql`
+      db.sql`
         INSERT INTO chat_messages (message_id, chat_id, created_at, chat_sequence_id, message_sequence_id, text, is_deleted) VALUES (
           ${bodyData.messageId},
           ${bodyData.chatId},
