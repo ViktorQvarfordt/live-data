@@ -23,7 +23,6 @@ export const PresenceUpsert = z.object({
 export type PresenceUpsert = z.infer<typeof PresenceUpsert>;
 
 export const PresenceHeartbeat = z.object({
-  type: z.literal("heartbeat"),
   channelId: z.string(),
   clientId: z.string(),
 });
@@ -45,8 +44,15 @@ export type PresenceUpdate = z.infer<typeof PresenceUpdate>;
 export const PresenceUpdates = z.array(PresenceUpdate);
 export type PresenceUpdates = z.infer<typeof PresenceUpdates>;
 
-export const PubMsg = z.any();
+export const PubMsg = z.object({
+  channelId: z.string(),
+  clientId: z.string().or(z.null()),
+  messages: Json.array(),
+});
 export type PubMsg = z.infer<typeof PubMsg>;
 
-export const PubMsgs = z.array(PubMsg);
-export type PubMsgs = z.infer<typeof PubMsgs>;
+export const RedisMessage = z.object({
+  clientId: z.string().or(z.null()), // Used to prevent echo
+  domainMessages: Json.array(),
+});
+export type RedisMessage = z.infer<typeof RedisMessage>;

@@ -66,19 +66,19 @@ export function query(stmt: SQLStatement): Promise<pg.QueryResult> {
   return pool.query(stmt);
 }
 
-export async function getExactlyOne<T>(
-  schema: z.Schema<T>,
+export async function getExactlyOne<T extends z.ZodType>(
+  schema: T,
   stmt: SQLStatement
-): Promise<T> {
+): Promise<z.infer<T>> {
   const { rows } = await query(stmt);
   if (rows.length === 1) return schema.parse(normalize(rows[0]));
   throw new Error(`Got ${rows.length} rows, expected exactly one`);
 }
 
-export async function getAll<T>(
-  schema: z.Schema<T>,
+export async function getAll<T extends z.ZodType>(
+  schema: T,
   stmt: SQLStatement
-): Promise<T[]> {
+): Promise<z.infer<T>[]> {
   const { rows } = await query(stmt);
   return rows.map((row) => schema.parse(normalize(row)));
 }

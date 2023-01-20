@@ -1,7 +1,7 @@
 import type http2 from "node:http2";
 import qs from "node:querystring";
 import url from "node:url";
-import { Json } from "@workspace/common/types";
+import type { Json } from "@workspace/common/types";
 import { RegExCaptureResult, TypedRegEx } from "typed-regex";
 import type { z } from "zod";
 import { asNonNullable, assertIsNonNullable } from "@workspace/common/assert";
@@ -151,7 +151,7 @@ export const createApp = (server: http2.Http2SecureServer) => {
       const { query, pathname } = url.parse(path);
       assertIsNonNullable(pathname)
 
-      console.log("stream", method, path);
+      // console.log("stream", method, path);
 
       let spec: HandlerSpec<string, Json, Json> | undefined = undefined;
       let params: RegExCaptureResult<string> = {};
@@ -184,7 +184,7 @@ export const createApp = (server: http2.Http2SecureServer) => {
         await spec.handler({ stream, params });
       } else if (spec.type === "with-query") {
         if (!query) throw new Error("Expected query to be defined"); // TODO Should be 400
-        let queryData = Json.parse(qs.parse(query));
+        let queryData = spec.querySchema.parse(qs.parse(query));
         await spec.handler({ stream, params, queryData });
       } else if (spec.type === "with-body") {
         let rawBodyData: string = "";
@@ -224,7 +224,7 @@ export const createApp = (server: http2.Http2SecureServer) => {
           try {
             await spec.handler({ stream, params, bodyData });
           } catch (err) {
-            const msg = "500 Internal Server Error";
+            const msg = `500 Internal Server Error when handling ${headers[":path"]}`;
             console.error(msg, err);
             stream.respond({
               ...corsHeaders,
@@ -236,7 +236,7 @@ export const createApp = (server: http2.Http2SecureServer) => {
         });
       }
     } catch (err) {
-      const msg = "500 Internal Server Error";
+      const msg = `500 Internal Server Error when handling ${headers[":path"]}`;
       console.error(msg, err);
       stream.respond({
         ...corsHeaders,

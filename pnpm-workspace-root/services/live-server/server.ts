@@ -1,14 +1,16 @@
 import {
   Json,
   PresenceDelete,
+  PresenceHeartbeat,
   PresenceUpsert,
-  PubMsgs,
+  PubMsg
 } from "@workspace/common/types";
-import { createApp } from "@workspace/server-common/typed-http2-handler";
+import { groupBy } from "@workspace/common/utils";
 import * as db from "@workspace/server-common/db";
+import { createApp } from "@workspace/server-common/typed-http2-handler";
 import fs from "node:fs";
-import { z } from "zod";
 import http2 from "node:http2";
+import { z } from "zod";
 import { initRedis } from "./redis.js";
 import { SsePubSub } from "./sse-pub-sub.js";
 
@@ -71,12 +73,17 @@ await initRedis();
 
 // Channel
 
+const ChannelClient = z.object({ channelId: z.string(), clientId: z.string() });
+
 app.handle({
   method: "POST",
-  pathRegExp: "^/channel/(?<channelName>.+?)/pub$",
-  bodySchema: PubMsgs,
-  handler: async ({ stream, params, bodyData }) => {
-    await ssePubSub.publish(params.channelName, JSON.stringify(bodyData));
+  pathRegExp: "^/channel/pub$",
+  bodySchema: PubMsg,
+  handler: async ({ stream, bodyData }) => {
+    await ssePubSub.publish(`channel:${bodyData.channelId}`, {
+      clientId: bodyData.clientId,
+      domainMessages: bodyData.messages,
+    });
     stream.respond(corsHeaders);
     stream.end();
   },
@@ -84,9 +91,13 @@ app.handle({
 
 app.handle({
   method: "GET",
-  pathRegExp: "^/channel/(?<channelName>.+?)/sub$",
-  handler: async ({ stream, params }) => {
-    await ssePubSub.subscribe(params.channelName, stream);
+  pathRegExp: "^/channel/sub$",
+  querySchema: ChannelClient,
+  handler: async ({ stream, queryData: { channelId, clientId } }) => {
+    console.log({clientId})
+    const channel = `channel:${channelId}` as const;
+
+    await ssePubSub.subscribe({ channel, clientId, stream });
 
     stream.respond({
       ...corsHeaders,
@@ -94,7 +105,7 @@ app.handle({
       "Cache-Control": "no-cache",
     });
 
-    const handler = () => ssePubSub.unsubscribe(params.channelName, stream);
+    const handler = () => ssePubSub.unsubscribe({ channel, clientId });
 
     stream.on("close", handler);
     stream.on("error", handler);
@@ -111,7 +122,7 @@ app.handle({
 app.handle({
   method: "GET",
   pathRegExp: "^/presence/get$",
-  querySchema: z.object({ channelId: z.string(), clientId: z.string() }),
+  querySchema: z.object({ channelId: z.string() }),
   handler: async ({ stream, queryData }) => {
     const states = await db.getAll(
       z.object({
@@ -119,7 +130,7 @@ app.handle({
         clientId: z.string(),
         createdAt: z.string(),
         updatedAt: z.string(),
-        data: Json,
+        data: Json.default(null),
       }),
       db.sql`
         select * from presence where channel_id = ${queryData.channelId}
@@ -138,14 +149,6 @@ app.handle({
   },
 });
 
-const groupBy = <T>(xs: T[], key: string): Record<string, T[]> => {
-  return xs.reduce((rv, x) => {
-    // @ts-ignore
-    (rv[x[key]] = rv[x[key]] || []).push(x);
-    return rv;
-  }, {});
-};
-
 // TODO This can use a shared queue instead. It would be nice to explore that even though this ticker is fine.
 setInterval(async () => {
   db.transaction(async () => {
@@ -160,10 +163,10 @@ setInterval(async () => {
     const updatesByChannel = groupBy(updates, "channelId");
 
     for (const [channelId, updates] of Object.entries(updatesByChannel)) {
-      ssePubSub.publish(
-        `presence:${channelId}`,
-        JSON.stringify(updates)
-      );
+      ssePubSub.publish(`presence:${channelId}`, {
+        clientId: null,
+        domainMessages: updates,
+      });
     }
   });
 }, 1000);
@@ -173,18 +176,39 @@ app.handle({
   pathRegExp: "^/presence/pub$",
   bodySchema: PresenceUpsert,
   handler: async ({ stream, bodyData: update }) => {
+    const dataString = JSON.stringify(update.data);
+
     await db.query(
       db.sql`
         insert into presence (channel_id, client_id, created_at, updated_at, data) values
-        (${update.channelId}, ${update.clientId}, now(), now(), ${update.data})
+        (${update.channelId}, ${update.clientId}, now(), now(), ${dataString})
         on conflict (channel_id, client_id) do update
-        set updated_at = now(), data = ${update.data}
+        set updated_at = now(), data = ${dataString}
       `
     );
 
-    await ssePubSub.publish(
-      `presence:${update.channelId}`,
-      JSON.stringify([update])
+    await ssePubSub.publish(`presence:${update.channelId}`, {
+      clientId: update.clientId,
+      domainMessages: [update],
+    });
+
+    stream.respond(corsHeaders);
+    stream.end();
+  },
+});
+
+app.handle({
+  method: "POST",
+  pathRegExp: "^/presence/heartbeat$",
+  bodySchema: PresenceHeartbeat,
+  handler: async ({ stream, bodyData: update }) => {
+    await db.query(
+      db.sql`
+        insert into presence (channel_id, client_id, created_at, updated_at) values
+        (${update.channelId}, ${update.clientId}, now(), now())
+        on conflict (channel_id, client_id) do update
+        set updated_at = now()
+      `
     );
 
     stream.respond(corsHeaders);
@@ -194,12 +218,12 @@ app.handle({
 
 app.handle({
   method: "GET",
-  pathRegExp: "^/presence/sub?",
-  querySchema: z.object({ channelId: z.string(), clientId: z.string() }),
-  handler: async ({ stream, queryData }) => {
-    const ch = `presence:${queryData.channelId}`;
+  pathRegExp: "^/presence/sub$",
+  querySchema: ChannelClient,
+  handler: async ({ stream, queryData: { channelId, clientId } }) => {
+    const channel = `presence:${channelId}` as const;
 
-    await ssePubSub.subscribe(ch, stream);
+    await ssePubSub.subscribe({ channel, clientId, stream });
 
     stream.respond({
       ...corsHeaders,
@@ -208,19 +232,22 @@ app.handle({
     });
 
     stream.on("close", async () => {
-      ssePubSub.unsubscribe(ch, stream);
+      ssePubSub.unsubscribe({ channel, clientId });
 
       await db.query(db.sql`
         delete from presence where
-        channel_id = ${queryData.channelId} and client_id = ${queryData.clientId}
+        channel_id = ${channelId} and client_id = ${clientId}
       `);
 
       const update: PresenceDelete = {
         type: "delete",
-        channelId: queryData.channelId,
-        clientId: queryData.clientId,
+        channelId,
+        clientId,
       };
-      ssePubSub.publish(ch, JSON.stringify([update]));
+      ssePubSub.publish(channel, {
+        clientId: update.clientId,
+        domainMessages: [update],
+      });
     });
   },
 });
@@ -234,7 +261,7 @@ app.handle({
     stream.respond({ ...corsHeaders, "content-type": "application/type" });
 
     const result: Record<string, number> = {};
-    for (const [key, val] of ssePubSub.activeChannels.entries()) {
+    for (const [key, val] of ssePubSub.activeChannelStreams.entries()) {
       result[key] = val.size;
     }
 

@@ -1,10 +1,11 @@
 import { useState, useEffect, FC, useCallback } from "react";
 import _ from "lodash";
 import { createId } from "@workspace/common/id";
-import { PresenceProvider, SseProvider } from "@workspace/live-provider"
+import { PresenceProvider, SseProvider } from "@workspace/live-provider";
 import { Message, Messages, Op } from "@workspace/client/types.js";
 import { asNonNullable, isNotUndefined } from "@workspace/common/assert";
 import { config } from "@workspace/common/config";
+import { RedisMessage } from "@workspace/common/types";
 
 const normalize = (rows: Message[]): Message[] => {
   console.log("normalize", { rows });
@@ -52,7 +53,10 @@ const PresenceView = () => {
   const [presenceMap, setPresenceMap] = useState<Record<string, unknown>>();
 
   useEffect(() => {
-    const provider = new PresenceProvider({ host: config.liveServerHost, channelId })
+    const provider = new PresenceProvider({
+      host: config.liveServerHost,
+      channelId,
+    });
 
     provider.on("update", () =>
       setPresenceMap(Object.fromEntries(provider.states.entries()))
@@ -61,7 +65,7 @@ const PresenceView = () => {
     provider.init();
 
     const handler = (e: MouseEvent) => {
-      provider.setLocalState({ x: e.clientX, y: e.clientY });
+      provider.updateLocalState({ x: e.clientX, y: e.clientY });
     };
 
     document.addEventListener("click", handler);
@@ -102,13 +106,15 @@ const useChatMessages = (): [Message[], (op: Op) => void] => {
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
 
   useEffect(() => {
-    const provider = new SseProvider(
-      `${config.coreServerHost}/chat/${channelId}/get`,
-      `${config.liveServerHost}/channel/${channelId}/sub`
-    );
+    const provider = new SseProvider({
+      getUrl: `${config.coreServerHost}/chat/${channelId}/get`,
+      sseUrl: `${config.liveServerHost}/channel/sub?channelId=${channelId}`,
+    });
 
     provider.on("update", (str) => {
-      const msgs = Messages.parse(JSON.parse(str));
+      const msgs = Messages.parse(
+        RedisMessage.parse(JSON.parse(str)).domainMessages
+      );
       setChatMessages((messages) => normalize([...messages, ...msgs]));
     });
 
@@ -259,7 +265,9 @@ const ChatView = () => {
   return (
     <>
       <h2>Messages</h2>
-      {chatMessages.length > 0 && asNonNullable(chatMessages[0]).chatSequenceId !== 0 && "..."}
+      {chatMessages.length > 0 &&
+        asNonNullable(chatMessages[0]).chatSequenceId !== 0 &&
+        "..."}
       {chatMessages.map((message) => (
         <MessageComp2
           key={message.messageId}

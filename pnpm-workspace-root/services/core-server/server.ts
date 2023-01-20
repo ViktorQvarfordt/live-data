@@ -2,7 +2,10 @@ import http2 from "node:http2";
 import fs from "node:fs";
 import * as db from "@workspace/server-common/db";
 import { z } from "zod";
-import { HttpMethod, createApp } from "@workspace/server-common/typed-http2-handler";
+import {
+  HttpMethod,
+  createApp,
+} from "@workspace/server-common/typed-http2-handler";
 import { config } from "./config.js";
 
 const state = { isShutdown: false };
@@ -74,11 +77,11 @@ const ChatRow = z.object({
 });
 
 const ChatUpsert = ChatRow.pick({
-  messageId: true,
   chatId: true,
+  messageId: true,
   text: true,
   isDeleted: true,
-});
+})
 
 // app.handle(
 //   "GET",
@@ -146,7 +149,7 @@ app.handle({
     // https://www.timescale.com/blog/how-we-made-distinct-queries-up-to-8000x-faster-on-postgresql/
     const entities = await db.getAll(
       ChatRow,
-        db.sql`
+      db.sql`
         WITH entities AS (
           SELECT DISTINCT ON (message_id) *
           FROM chat_messages WHERE
@@ -207,9 +210,13 @@ app.handle({
 
     await makeHttp2Request(
       config.ssePubSubHost,
-      `/channel/${bodyData.chatId}/pub`,
+      `/channel/pub`,
       "POST",
-      JSON.stringify([augmentedData])
+      JSON.stringify({
+        channelId: bodyData.chatId,
+        clientId: null,
+        messages: [augmentedData],
+      })
     );
 
     stream.respond(corsHeaders);
