@@ -63,6 +63,7 @@ type ClientId = string;
 export class SseProvider extends TypedEventEmitter<{
   load: (msg: string) => void;
   update: (msg: string) => void;
+  error: () => void;
 }> {
   public clientId: string;
   private initState: { eventSource: EventSource } | undefined = undefined;
@@ -99,6 +100,7 @@ export class SseProvider extends TypedEventEmitter<{
 
     eventSource.addEventListener("error", () => {
       console.error("EntityProvider eventSource error");
+      this.emit("error");
     });
 
     // Called when eventSource first opens and when recovering from error.
@@ -119,7 +121,6 @@ export class SseProvider extends TypedEventEmitter<{
   public destroy() {
     console.debug("Provider destroy");
     if (!this.initState) throw new Error("IllegalStateException");
-    super.off();
     this.initState.eventSource.close();
     this.initState = undefined;
   }
@@ -166,6 +167,7 @@ export class PresenceProvider extends TypedEventEmitter<{
     });
     sseProvider.on("load", this.onLoad.bind(this));
     sseProvider.on("update", this.onUpdate.bind(this));
+    sseProvider.on("error", this.onError.bind(this));
     sseProvider.init();
 
     const ticker = new Ticker();
@@ -180,19 +182,29 @@ export class PresenceProvider extends TypedEventEmitter<{
   private async sendHeartbeat() {
     if (!this.initState) throw new Error("IllegalStateException");
 
-    await fetch(this.heartbeatUrl, {
-      method: "post",
-      body: JSON.stringify({
-        clientId: this.clientId,
-        channelId: this.channelId,
-      }),
-    });
+    try {
+      await fetch(this.heartbeatUrl, {
+        method: "post",
+        body: JSON.stringify({
+          clientId: this.clientId,
+          channelId: this.channelId,
+        }),
+      });
+    } catch (err) {
+      this.onError();
+    }
+  }
+
+  private onError() {
+    console.log("onError, trying to reconnect");
+    this.destroy();
+    setTimeout(() => {
+      this.init();
+    }, 1000);
   }
 
   private onLoad(msg: string) {
     if (!this.initState) throw new Error("IllegalStateException");
-
-    this.states.clear();
 
     this.handleUpdates(PresenceUpdates.parse(JSON.parse(msg)));
   }
@@ -238,6 +250,8 @@ export class PresenceProvider extends TypedEventEmitter<{
       }),
     });
 
+    if (!this.initState) return;
+
     this.initState.ticker.reset();
   }
 
@@ -247,9 +261,10 @@ export class PresenceProvider extends TypedEventEmitter<{
   }
 
   public destroy() {
-    console.debug("Presence destroy");
+    console.log("Presence destroy");
     if (!this.initState) throw new Error("IllegalStateException");
-    super.off();
+    this.states.clear();
+    this.emit("update");
     this.initState.sseProvider.destroy();
     this.initState.ticker.destroy();
     this.initState = undefined;
