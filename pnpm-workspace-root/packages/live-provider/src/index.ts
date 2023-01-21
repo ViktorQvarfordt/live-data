@@ -3,11 +3,12 @@ import { TypedEventEmitter } from "@workspace/common/typed-event-emitter";
 import { Json, PresenceUpdates, RedisMessage } from "@workspace/common/types";
 
 class Ticker {
-  private initState: { timeout?: ReturnType<typeof setTimeout> } | undefined =
-    undefined;
+  private initState:
+    | { lastCall?: number; timeout?: ReturnType<typeof setTimeout> }
+    | undefined = undefined;
 
   /**
-   * Calls `callback` after at least `delayMs`. Never calls `callback` parallel.
+   * Calls `callback` after `delayMs`, possibly later. Never calls `callback` in parallel.
    */
   public init(
     callback: () => void | Promise<void>,
@@ -16,15 +17,24 @@ class Ticker {
   ) {
     if (this.initState) throw new Error("IllegalStateException");
 
+    const getTimeLeft = (): number => {
+      if (!this.initState?.lastCall) return 0;
+      const timeSinceLastCall = performance.now() - this.initState.lastCall;
+      return delayMs - timeSinceLastCall;
+    };
+
     const handler = async () => {
       if (!this.initState) throw new Error("IllegalStateException");
 
-      const t0 = performance.now();
-      await callback();
-      const t1 = performance.now();
-      const dt = t1 - t0;
-
-      this.initState.timeout = setTimeout(handler, delayMs - dt);
+      const timeLeft = getTimeLeft();
+      if (timeLeft > 0) {
+        this.initState.timeout = setTimeout(handler, timeLeft);
+      } else {
+        this.initState.lastCall = performance.now();
+        await callback();
+        if (!this.initState) return; // this.destroy() may have been called during execution of the callback
+        this.initState.timeout = setTimeout(handler, getTimeLeft());
+      }
     };
 
     this.initState = {};
@@ -37,7 +47,8 @@ class Ticker {
   }
 
   public reset() {
-    // TODO
+    if (!this.initState) throw new Error("IllegalStateException");
+    this.initState.lastCall = performance.now();
   }
 
   public destroy() {
@@ -151,7 +162,7 @@ export class PresenceProvider extends TypedEventEmitter<{
     const sseProvider = new SseProvider({
       getUrl: this.getUrl,
       sseUrl: this.subUrl,
-      clientId: this.clientId
+      clientId: this.clientId,
     });
     sseProvider.on("load", this.onLoad.bind(this));
     sseProvider.on("update", this.onUpdate.bind(this));
@@ -227,7 +238,7 @@ export class PresenceProvider extends TypedEventEmitter<{
       }),
     });
 
-    this.initState.ticker.reset()
+    this.initState.ticker.reset();
   }
 
   public getLocalState(): Json | undefined {

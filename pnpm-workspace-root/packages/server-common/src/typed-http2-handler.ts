@@ -151,7 +151,7 @@ export const createApp = (server: http2.Http2SecureServer) => {
       const { query, pathname } = url.parse(path);
       assertIsNonNullable(pathname)
 
-      // console.log("stream", method, path);
+      console.log("stream", method, path);
 
       let spec: HandlerSpec<string, Json, Json> | undefined = undefined;
       let params: RegExCaptureResult<string> = {};
