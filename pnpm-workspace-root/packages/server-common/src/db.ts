@@ -25,8 +25,7 @@ pg.types.setTypeParser(INT8_TYPEID, str => {
 });
 
 const pool = new pg.Pool({
-  user: "postgres",
-  password: "password",
+  connectionString: 'postgresql://postgres:password@127.0.0.1:5432/postgres'
 });
 
 const snakeToCamel = (snake: string): string => {
