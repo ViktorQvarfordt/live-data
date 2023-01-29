@@ -1,13 +1,53 @@
 #!/usr/bin/env sh
 set -euxo pipefail
 
-echo "TODO"
-
 # pnpm install
-# pnpm run --parallel clean
-# pnpm run --recursive --filter './packages/*' build
-# pnpm run --parallel dev
+# pnpm clean
+# pnpm packages:build
 
-# TODO start these in two panes
-# pnpm run services:dev
-# pnpm run packages:dev
+osascript << EOF
+    tell application "iTerm2"
+        activate
+        select first window
+
+
+        # Split into 2x2 panes
+
+        tell current window
+            create tab with default profile
+        end tell
+
+        tell first session of current tab of current window
+            split horizontally with default profile
+            split vertically with default profile
+        end tell
+
+        tell third session of current tab of current window
+            split vertically with default profile
+        end tell
+
+
+        # Start commands in panes
+
+        # (1, 1)
+        tell first session of current tab of current window
+            write text "pnpm run packages:dev"
+        end tell
+
+        # (1, 2)
+        tell second session of current tab of current window
+            write text "pnpm run services:dev" newline NO
+            select
+        end tell
+
+        # (2, 1)
+        tell third session of current tab of current window
+            write text "docker run --rm -p 6379:6379 redis:7-alpine"
+        end tell
+
+        # (2, 2)
+        tell fourth session of current tab of current window
+            write text "docker run --rm -p 5432:5432 -e POSTGRES_PASSWORD=password postgres:14-alpine"
+        end tell
+    end tell
+EOF
