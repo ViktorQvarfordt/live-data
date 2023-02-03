@@ -1,9 +1,9 @@
 #!/usr/bin/env sh
 set -euxo pipefail
 
-# pnpm install
-# pnpm clean
-# pnpm packages:build
+pnpm install
+pnpm clean
+pnpm packages:build
 
 osascript << EOF
     tell application "iTerm2"
